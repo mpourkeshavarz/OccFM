@@ -1,0 +1,8 @@
+DATA_CONFIG:
+    _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
+
+COMPRESSOR_CONFIG:
+    _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
+
+TRANSITION_MODEL_CONFIGS:
+    _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
