@@ -6,6 +6,9 @@ class VaeQuant(nn.Module):
         super().__init__()
         self.mus, self.logvars = torch.zeros(1), torch.zeros(1)
 
+        self.mu_sigma_cache = False
+        self.latent_cache = False
+
     def forward(self, data_dict):
         compressed_features = data_dict['compressed_features']
 
@@ -18,6 +21,8 @@ class VaeQuant(nn.Module):
         data_dict['sampled_features'] = sampled_features
 
         self.mus, self.logvars = mu, sigma
+
+        data_dict['mu'], data_dict['sigma'] = (mu, sigma) if self.mu_sigma_cache else (None, None)
         return data_dict
 
     def get_loss(self):

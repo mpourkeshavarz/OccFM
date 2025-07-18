@@ -1,5 +1,8 @@
 DATASET: NuScenesDataset
 DATA_PATH: 'data/nuscenes'
+LABEL_NAME: ['others', 'barrier', 'bicycle', 'bus', 'car', 'construction_vehicle', 'motorcycle', 'pedestrian',
+  'traffic_cone', 'trailer', 'truck', 'driveable_surface', 'other_flat', 'sidewalk', 'terrain', 'manmade', 'vegetation']
+
 HEIGHT: 16
 
 INFO_PATH: {

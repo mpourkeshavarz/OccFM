@@ -8,8 +8,11 @@ from nuscenes.nuscenes import NuScenes
 class NuScenesDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, batch_size, training, cache_mode):
         super().__init__(dataset_cfg, training)
+        self.sem_mode = dataset_cfg.sem_mode
+        self.label_name = dataset_cfg.label_name
+        self.sequence_length = dataset_cfg.sequence_length
 
-        if not cache_mode:
+        if not cache_mode: # used to control dataset in VAE or CFM
             self.nuSc_context_manager = NuScenes(version='v1.0-trainval', dataroot=dataset_cfg['data_path'])
 
             pickle_path = dataset_cfg['info_path']['train' if training else 'test'][0]

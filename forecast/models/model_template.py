@@ -16,6 +16,7 @@ class ModelTemplate(nn.Module):
         self.world_model_topology = ['embedding', 'encoder', 'quantization', 'transition_model', 'decoder', 'planner']
         self.compressor_topology = ['embedding', 'encoder', 'quantization', 'decoder']
         self.global_step = 0
+        self.count_fps = False
 
     def update_global_step(self):
         self.global_step += 1
@@ -90,4 +91,38 @@ class ModelTemplate(nn.Module):
 
     def forward(self, **kwargs):
         raise NotImplementedError
+
+    # @staticmethod
+    def recover_training(self, weight_path):
+
+        pl_sd = torch.load(weight_path, map_location="cpu", weights_only=True)
+        self.load_state_dict(pl_sd['state_dict'])
+
+        """
+        old_name, weight = list(pl_sd['state_dict'].keys()), list(pl_sd['state_dict'].values())
+        current_name = [x[0] for x in self.state_dict().items()]
+        remap_list = []
+        for name in current_name:
+            if name.startswith('embedding'):
+                new_name = name[10:]
+            else:
+                new_name = name
+
+            if new_name in old_name:
+                idx = old_name.index(new_name)
+                remap_list.append(idx)
+            else:
+                raise ValueError('%s is not in remap_list' % name)
+
+        new_state_dict = {}
+        weights = [weight[x] for x in remap_list]
+        for name, weights in zip(current_name, weights):
+            new_state_dict[name] = weights
+
+        pl_sd['state_dict'] = new_state_dict
+        
+        self.load_state_dict(new_state_dict)
+        """
+        return pl_sd
+
 
