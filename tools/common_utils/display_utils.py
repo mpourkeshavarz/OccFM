@@ -51,7 +51,7 @@ def setup_loggers():
         transient=False,
     )
 
-    console = Console()
+    console = Console(force_terminal=True, legacy_windows=True)
 
     return progress, console
 

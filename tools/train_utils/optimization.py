@@ -30,7 +30,7 @@ def build_optimizer(optimizer_cfg, model):
         raise NotImplementedError
     return opt
 
-def build_scheduler(optimizer, scheduler_cfg, training_length_ep):
+def build_scheduler(optimizer, scheduler_cfg, training_length_ep, last_epoch=-1):
 
     warmup_steps = scheduler_cfg['WARMUP_STEPS']
     min_lr_ratio = scheduler_cfg['MIN_LR_RATIO']
@@ -44,6 +44,6 @@ def build_scheduler(optimizer, scheduler_cfg, training_length_ep):
             progress = min(progress, 1.0)
             cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
             return min_lr_ratio + (1 - min_lr_ratio) * cosine_decay
-
-    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    # here epoch is epoch for optimizer
+    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
     return scheduler

@@ -13,7 +13,7 @@ def build_network(model_cfg, loss_cfg=None):
         model = build_compressor(model_cfg=model_cfg, loss_cfg=loss_cfg)
     return model
 
-def load_data_to_gpu(batch_dict):
+def load_data_to_gpu(batch_dict, device=None):
     for key, val in batch_dict.items():
         if key in ['trajectory', 'semantic_occ']:
             batch_dict[key] = torch.from_numpy(val).cuda()
@@ -22,11 +22,11 @@ def load_data_to_gpu(batch_dict):
     return batch_dict
 
 
-def model_fn_decorator():
+def model_fn_decorator(device):
     ModelReturn = namedtuple('ModelReturn', ['loss', 'tb_dict', 'disp_dict'])
 
     def model_func(model, batch_dict):
-        load_data_to_gpu(batch_dict)
+        load_data_to_gpu(batch_dict, device)
         ret_dict, tb_dict, disp_dict = model(batch_dict)
 
         loss = ret_dict['loss'].mean()

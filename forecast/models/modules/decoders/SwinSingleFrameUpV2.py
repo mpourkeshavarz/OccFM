@@ -10,7 +10,7 @@ from einops import rearrange
 
 class SwinSingleFrameUpV2(nn.Module):
     def __init__(self, input_channel=3, patch_embed_dim=96, window_size=5, heads=8,
-                 out_dim=None, depth=None, mlp_ratio=4, qkv_bias=True, attn_drop_rate=0, drop_rate=0, use_checkpoint=True,
+                 out_dim=None, depth=None, mlp_ratio=4, qkv_bias=True, attn_drop_rate=0, drop_rate=0, use_checkpoint=False,
                  upsample='conv', patched_size=50,  **kwargs):
         super().__init__()
 

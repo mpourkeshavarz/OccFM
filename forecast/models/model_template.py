@@ -16,7 +16,6 @@ class ModelTemplate(nn.Module):
         self.world_model_topology = ['embedding', 'encoder', 'quantization', 'transition_model', 'decoder', 'planner']
         self.compressor_topology = ['embedding', 'encoder', 'quantization', 'decoder']
         self.global_step = 0
-        self.count_fps = False
 
     def update_global_step(self):
         self.global_step += 1

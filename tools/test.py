@@ -2,10 +2,11 @@ import torch
 import numpy as np
 import time
 from rich.console import Group
+import torch.distributed as dist
 
 from tools.common_utils.display_utils import format_disp_dict
 from tools.common_utils.common_utils import accumulate_disp_dict
-from forecast.utils.eval_utils import multi_step_MeanIou
+from forecast.utils.eval_utils import multi_step_MeanIou, DistributedDictMeanCounter
 
 
 def setup_occ_comparsion(label_name, frame):
@@ -19,26 +20,29 @@ def setup_occ_comparsion(label_name, frame):
     return IoU_counter, mIoU_counter
 
 
-def val_model(model, val_loader, model_func, progress, console_live, use_amp=False, eval_iou=False, eval_fps=False):
+def val_model(model, val_loader, model_func, progress, console_live, use_amp=False, eval_iou=False, eval_fps=False,
+              is_main_process=None, rank=None):
 
-    val_loss_all, val_fps = [], []
     label_name = val_loader.dataset.label_name
     model.eval()
-    model.count_fps = eval_fps
 
-    val_task = progress.add_task(description="Eval samples", total=len(val_loader))
+    if is_main_process:
+        val_task = progress.add_task(description="Eval samples", total=len(val_loader))
+
     IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, val_loader.dataset.sequence_length)
+    metrics_mean_counter = DistributedDictMeanCounter(rank)
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
 
             with torch.amp.autocast('cuda', enabled=use_amp):
-
+                batch['eval_fps'] = eval_fps
                 val_loss, tb_dict, val_disp_dict = model_func(model, batch)
-                val_loss_all.append(tb_dict)
 
                 if eval_fps:
-                    val_fps.append(val_disp_dict['time'])
+                    tb_dict["time"] = val_disp_dict["time"]
+
+                metrics_mean_counter.update(tb_dict)
 
                 if eval_iou:
                     pred_occ, gt_occ = val_disp_dict['pred_occ'].detach().cpu(), \
@@ -51,19 +55,23 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         gt_occ[gt_occ == len(label_name)] = 0
                     IoU_counter._after_step(pred_occ, gt_occ)
 
-            progress.update(val_task, advance=1)
-            disp_table = format_disp_dict(tb_dict)
-            console_live.update(Group(progress, disp_table))
+            if is_main_process:
+                progress.update(val_task, advance=1)
+                console_live.update(Group(progress, format_disp_dict(tb_dict)))
 
-    console_live.update(Group(progress))
-    progress.remove_task(val_task)
-    avg_dict = accumulate_disp_dict(val_loss_all)
+    dist.barrier()
+    all_miou = mIoU_counter._after_epoch()
+    all_iou = IoU_counter._after_epoch()
+    avg_dict = metrics_mean_counter.compute()
 
-    avg_dict['all_miou'] = mIoU_counter._after_epoch()
-    avg_dict['all_iou'] = IoU_counter._after_epoch()
-    avg_dict['time'] = np.mean(val_fps)
+    if is_main_process:
+        console_live.update(Group(progress))
+        progress.remove_task(val_task)
 
-    model.count_fps = False
+        avg_dict["all_miou"] = all_miou
+        avg_dict["all_iou"] = all_iou
+    else:
+        avg_dict = {}
     return avg_dict
 
 if __name__ == "__main__":

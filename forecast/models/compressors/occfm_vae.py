@@ -30,7 +30,8 @@ class OccFmVAE(ModelTemplate):
         return batch_dict
 
     def forward(self, batch_dict, **kwargs):
-        if self.count_fps:
+        eval_fps = batch_dict.get('eval_fps', False)
+        if eval_fps:
             starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             torch.cuda.synchronize()
             starter.record()
@@ -44,7 +45,7 @@ class OccFmVAE(ModelTemplate):
 
         loss, tb_dict, disp_dict = self.get_training_loss(batch_dict)
 
-        if self.count_fps and forward_time is not None:
+        if eval_fps and forward_time is not None:
             disp_dict['time'] = forward_time
 
         return loss, tb_dict, disp_dict
