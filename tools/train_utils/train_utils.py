@@ -49,10 +49,6 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 scaler.update()
                 lr_scheduler.step()
 
-
-                if batch_idx > 100:
-                    break
-
                 if is_main_process:
                     progress.update(step_task, advance=1)
                     tb_dict['lr'] = optimizer.param_groups[0]['lr']
