@@ -20,11 +20,11 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None):
 
     train_loader.sampler.set_epoch(start_epoch)
-    scaler = torch.amp.GradScaler(enabled=use_amp, init_scale=optim_cfg.get('LOSS_SCALE_FP16', 2.0 ** 16))
+    scaler = torch.amp.GradScaler(enabled=use_amp, init_scale=optim_cfg.get('LOSS_SCALE_FP16', 10))
     historical_losses, saved_ckpts = [], []
 
     if is_main_process:
-        epoch_task = progress.add_task(description="Epoch", total=optim_cfg.NUM_EPOCHS - start_epoch,
+        epoch_task = progress.add_task(description="Epoch", total=optim_cfg.NUM_EPOCHS,
                                        completed=start_epoch if start_epoch > 0 else start_epoch+1)
 
     live_ctx = Live(console=console, refresh_per_second=4, transient=True) if is_main_process else nullcontext()

@@ -145,13 +145,14 @@ class PatchEmbed(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        # FIXME look at relaxing size constraints
+        input_dtype = x.dtype
         assert H == self.img_size[0] and W == self.img_size[1], \
             f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        x = self.proj(x).flatten(2).transpose(1, 2)  # B Ph*Pw C
+        x = self.proj(x)
+        x = x.flatten(2).transpose(1, 2)  # B Ph*Pw C
         if self.norm is not None:
             x = self.norm(x)
-        return x
+        return x.to(input_dtype)
 
     def flops(self):
         Ho, Wo = self.patches_resolution
@@ -204,19 +205,6 @@ class BasicLayer(nn.Module):
                                  norm_layer=norm_layer,
                                  pretrained_window_size=pretrained_window_size)
             for i in range(depth)])
-
-        if use_lora:
-            self.blocks = nn.ModuleList([
-                SwinTransformerBlock(dim=dim, input_resolution=input_resolution,
-                                     num_heads=num_heads, window_size=window_size,
-                                     shift_size=0 if (i % 2 == 0) else window_size // 2,
-                                     mlp_ratio=mlp_ratio,
-                                     qkv_bias=qkv_bias,
-                                     drop=drop, attn_drop=attn_drop,
-                                     drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
-                                     norm_layer=norm_layer,
-                                     pretrained_window_size=pretrained_window_size, use_lora=use_lora, rank=rank)
-                for i in range(depth)])
 
         # patch merging layer
         if downsample is not None:
@@ -356,10 +344,11 @@ class SwinTransformerBlock(nn.Module):
         else:
             x = shifted_x
         x = x.view(B, H * W, C)
-        x = shortcut + self.drop_path(self.norm1(x))
+        input_dtype = x.dtype
+        x = shortcut + self.drop_path(self.norm1(x).to(input_dtype))
 
         # FFN
-        x = x + self.drop_path(self.norm2(self.mlp(x)))
+        x = x + self.drop_path(self.norm2(self.mlp(x)).to(input_dtype))
 
         return x
 

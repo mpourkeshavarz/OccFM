@@ -28,7 +28,12 @@ def format_disp_dict(disp_dict):
     table.add_column("Value", justify="right", style="bold white")
 
     for key, val in disp_dict.items():
-        table.add_row(str(key), f"{val:.4f}")
+        if abs(val) < 1e-3 or abs(val) >= 1e4:
+            value_str = f"{val:.2e}"
+        else:
+            value_str = f"{val:.4f}"
+
+        table.add_row(str(key), value_str)
 
     panel = Panel(
         Align.center(table, vertical="middle"),

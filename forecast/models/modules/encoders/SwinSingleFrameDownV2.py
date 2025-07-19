@@ -64,7 +64,7 @@ class SwinSingleFrameDownV2(nn.Module):
 
         bev_feature = data_dict['bev_features']
         bev_feature = self.patch_embed_layer(bev_feature)
-        bev_feature = bev_feature + self.absolute_pos_embed
+        bev_feature = bev_feature + self.absolute_pos_embed.to(bev_feature.dtype)
 
         for i in range(self.depth):
             swin_block, res_block,= self.net_blocks[i*2: i*2 +2]

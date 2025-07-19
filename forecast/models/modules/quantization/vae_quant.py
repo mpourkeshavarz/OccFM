@@ -14,7 +14,7 @@ class VaeQuant(nn.Module):
 
         dim = compressed_features.shape[1] // 2
         mu = compressed_features[:, :dim]
-        sigma = torch.exp(compressed_features[:, dim:] / 2)
+        sigma = torch.exp(compressed_features[:, dim:] / 2).to(compressed_features.dtype)
         eps = torch.randn_like(mu)
 
         sampled_features = mu + sigma * eps

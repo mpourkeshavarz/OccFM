@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import time
+import copy
 from rich.console import Group
 import torch.distributed as dist
 
@@ -24,7 +24,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
               is_main_process=None, rank=None):
 
     label_name = val_loader.dataset.label_name
-    model.eval()
+    model_fp16 = copy.deepcopy(model).half().eval()
 
     if is_main_process:
         val_task = progress.add_task(description="Eval samples", total=len(val_loader))
@@ -37,7 +37,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
             with torch.amp.autocast('cuda', enabled=use_amp):
                 batch['eval_fps'] = eval_fps
-                val_loss, tb_dict, val_disp_dict = model_func(model, batch)
+                val_loss, tb_dict, val_disp_dict = model_func(model_fp16, batch)
 
                 if eval_fps:
                     tb_dict["time"] = val_disp_dict["time"]

@@ -12,7 +12,8 @@ class Residual_conv(nn.Module):
     def forward(self, latent_features):
         conv1 = self.conv1(latent_features)
         # conv1 = rearrange(conv1, 'b c h w -> b h w c')
-        conv1 = self.norm(conv1)
+        input_dtype = conv1.dtype
+        conv1 = self.norm(conv1).to(input_dtype)
         conv1 = nonlinearity(conv1)
         conv2 = self.conv2(conv1)
         if conv2.shape[1] != latent_features.shape[1]:
