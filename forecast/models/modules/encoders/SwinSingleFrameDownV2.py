@@ -14,6 +14,7 @@ class SwinSingleFrameDownV2(nn.Module):
                  use_lora=False, rank=128, latent_dim=8, downsample='conv', **kwargs):
         super().__init__()
 
+        self.skip = kwargs.get('skip', False)
         patched_size = img_size // patch_size  # No patch for semantic occ
         self.patch_embed_layer = PatchEmbed(img_size=img_size, patch_size=patch_size, in_chans=input_channel,
                                             embed_dim=patch_embed_dim)
@@ -61,6 +62,9 @@ class SwinSingleFrameDownV2(nn.Module):
         self.conv_out = torch.nn.Conv2d(patch_embed_dim // 4, latent_dim * 2, kernel_size=3, stride=1, padding=1)
 
     def forward(self, data_dict):
+
+        if self.skip:
+            return data_dict
 
         bev_feature = data_dict['bev_features']
         bev_feature = self.patch_embed_layer(bev_feature)

@@ -1,0 +1,5 @@
+from .FlowMatchingV2 import FLOW_MATCHING_DOWN_X4_DiT_D16
+
+__all__ = {
+    'FLOW_MATCHING_DOWN_X4_DiT_D16': FLOW_MATCHING_DOWN_X4_DiT_D16,
+}

@@ -14,6 +14,8 @@ class SwinSingleFrameUpV2(nn.Module):
                  upsample='conv', patched_size=50,  **kwargs):
         super().__init__()
 
+        self.skip = kwargs.get('skip', False)
+
         self.depth = len(depth)
         self.net_blocks = nn.ModuleList()
         self.upsample_blocks = nn.ModuleList()
@@ -48,6 +50,9 @@ class SwinSingleFrameUpV2(nn.Module):
         self.conv_out = torch.nn.Conv2d(out_dim, out_dim, kernel_size=3, stride=1, padding=1)
 
     def forward(self, data_dict):
+
+        if self.skip:
+            return data_dict
 
         sampled_features = data_dict['sampled_features']
         compressed_map = self.conv_in(sampled_features)

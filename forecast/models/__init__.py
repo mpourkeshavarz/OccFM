@@ -5,17 +5,17 @@ from .worldmodels import build_wm
 from .compressors import build_compressor
 
 
-def build_network(model_cfg, loss_cfg=None):
+def build_network(model_cfg, loss_cfg=None, cache_mode=None):
 
-    if 'TRANSITION_MODEL_CONFIGS' in model_cfg.keys():
-        model = build_wm(model_cfg=model_cfg, dataset_cfg=loss_cfg)
+    if 'TRANSITION_MODEL_CONFIG' in model_cfg.keys():
+        model = build_wm(model_cfg=model_cfg, loss_cfg=loss_cfg, cache_mode=cache_mode)
     else:
         model = build_compressor(model_cfg=model_cfg, loss_cfg=loss_cfg)
     return model
 
 def load_data_to_gpu(batch_dict, device=None):
     for key, val in batch_dict.items():
-        if key in ['trajectory', 'semantic_occ']:
+        if key in ['trajectory', 'semantic_occ', 'x_sampled']:
             batch_dict[key] = torch.from_numpy(val).cuda()
         else:
             continue

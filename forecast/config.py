@@ -25,7 +25,7 @@ def cfg_from_yaml_file(cfg_file, config):
         merge_new_config(config=config, new_config=new_config)
 
     MODEL = EasyDict()
-    for model_module_name in ['COMPRESSOR_CONFIG', 'TRANSITION_MODEL_CONFIGS', 'PLANER_CONFIGS']:
+    for model_module_name in ['COMPRESSOR_CONFIG', 'TRANSITION_MODEL_CONFIG', 'PLANNER_CONFIG']:
         if model_module_name in config.keys():
             MODEL[model_module_name] = copy.deepcopy(config[model_module_name])
             del config[model_module_name]

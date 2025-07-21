@@ -24,10 +24,16 @@ class DatasetTemplate(torch_data.Dataset):
 
         for key, value in batch_dict.items():
             if key in ['paths']:
-                batch_dict[key] = [x[0] for x in batch_dict[key]]
+                batch_dict[key] = [x for x in batch_dict[key]]
             elif key in ['trajectory']:
-                batch_dict[key] = np.stack([x[0] for x in batch_dict[key]])
-            elif key in ['semantic_occ']:
+
+                traj = batch_dict[key]
+                all_same_shape = all(t.shape == traj[0].shape for t in traj)
+                if not all_same_shape:
+                    print()
+
+                batch_dict[key] = np.stack([x for x in batch_dict[key]])
+            elif key in ['semantic_occ', 'x_sampled']:
                 batch_dict[key] = np.stack([x for x in batch_dict[key]])
             else:
                 raise KeyError(key)

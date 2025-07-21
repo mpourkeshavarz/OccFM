@@ -15,9 +15,9 @@ def split_weight(all_parameters):
     return params_decay, params_no_decay
 
 
-def build_optimizer(optimizer_cfg, model):
+def build_optimizer(optimizer_cfg, model, world_size):
 
-    lr = optimizer_cfg['BASE_LR'] * optimizer_cfg['BATCH_SIZE_PER_GPU']
+    lr = optimizer_cfg['BASE_LR'] * optimizer_cfg['BATCH_SIZE_PER_GPU'] * world_size
     params_decay, params_no_decay = split_weight(model.named_parameters())
 
     if optimizer_cfg['NAME'] == 'ADAM':

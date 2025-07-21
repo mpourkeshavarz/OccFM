@@ -9,11 +9,14 @@ class VoxelHeightSemEmbed(nn.Module):
 
         feat_dim = model_cfg.FEAT_DIM
         voxel_size = model_cfg.VOXEL_SIZE
-        height_num = model_cfg.HEIGHT_NUM
+        self.height_num = model_cfg.HEIGHT_NUM
+        self.cate_dim = model_cfg.NUM_CATE
+        self.cate = model_cfg.FEAT_DIM
 
+        self.skip = model_cfg['skip']
         self.class_embeds = nn.Embedding(model_cfg.NUM_CATE, feat_dim)
-        self.height_embedding = nn.Parameter(torch.zeros(height_num, feat_dim // 2), requires_grad=False)
-        self._init_embedding_weights(height_num, model_cfg.OCC_RANGE, feat_dim // 2, voxel_size)
+        self.height_embedding = nn.Parameter(torch.zeros(self.height_num, feat_dim // 2), requires_grad=False)
+        self._init_embedding_weights(self.height_num, model_cfg.OCC_RANGE, feat_dim // 2, voxel_size)
 
         self.pre_pillar_feature = nn.Sequential(
             nn.Conv2d(192, model_cfg.ENCODER_DIM , 3, 1, 1),
@@ -34,6 +37,9 @@ class VoxelHeightSemEmbed(nn.Module):
         self.height_embedding.data.copy_(encodings_data.float())
 
     def forward(self, data_dict):
+
+        if self.skip:
+            return data_dict
 
         sem_occ = data_dict["semantic_occ"]
         input = self.class_embeds(sem_occ.long())

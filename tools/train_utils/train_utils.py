@@ -72,13 +72,14 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
                     if current_loss in sorted([x[1] for x in historical_losses])[:3]:
                         ckpt_file = f'epoch={str(current_epoch).zfill(6)}.ckpt'
-                        ckpt_path_full = ckpt_path / ckpt_file
+                        ckpt_path_full = ckpt_path + ckpt_file
 
                         torch.save({
                             'state_dict': model.state_dict(),
                             'optimizer_states': [optimizer.state_dict()],
                             'epoch': current_epoch,
                             'scaler_state_dict': scaler.state_dict() if use_amp else None,
+                            'lr_scheduler': lr_scheduler.state_dict()
                         }, ckpt_path_full)
 
                         saved_ckpts.append((current_loss, ckpt_path_full))  # 记录新模型
@@ -88,7 +89,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                             worst = max(saved_ckpts, key=lambda p: p[0])  # 按 loss 最大找最差
                             os.remove(worst[1])  # 删除文件
                             saved_ckpts.remove(worst)  # 从列表移除
-                            console.print(f"[red]🗑️  Removed ckpt:[/] {worst[1].name}")
+                            console.print(f"[red]🗑️  Removed ckpt:[/] {worst[1]}")
 
                         console.print(f"[green]💾  Saved:[/] {ckpt_file}  (loss {current_loss:.4f})")
 

@@ -17,11 +17,11 @@ def build_dataloader(dataset_cfg, batch_size, num_workers, cache_mode, training=
     dataset = __all__[dataset_cfg.DATASET](
         dataset_cfg=common_utils.lowercase_keys(dataset_cfg), batch_size=batch_size, training=training, cache_mode=cache_mode
     )
-    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=training)
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=training, drop_last=True)
 
     dataloader = DataLoader(
         dataset, batch_size=batch_size, pin_memory=True, num_workers=num_workers, collate_fn=dataset.collate_batch,
-        sampler=sampler, drop_last=False, timeout=0, worker_init_fn=partial(common_utils.worker_init_fn, seed=seed)
+        sampler=sampler, drop_last=True, timeout=0, worker_init_fn=partial(common_utils.worker_init_fn, seed=seed)
     )
     return dataset, dataloader
 

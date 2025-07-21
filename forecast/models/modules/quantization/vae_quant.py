@@ -8,8 +8,13 @@ class VaeQuant(nn.Module):
 
         self.mu_sigma_cache = False
         self.latent_cache = False
+        self.skip = kwargs.get('skip', False)
 
     def forward(self, data_dict):
+
+        if self.skip:
+            return data_dict
+
         compressed_features = data_dict['compressed_features']
 
         dim = compressed_features.shape[1] // 2

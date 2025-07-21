@@ -9,12 +9,12 @@ import torch.nn.functional as F
 
 class OccFmVAE(ModelTemplate):
     def __init__(self, model_cfg, loss_cfg, **kwargs):
-        super().__init__(model_cfg)
+        super().__init__(model_cfg.COMPRESSOR_CONFIG)
         self.input_height = self.model_cfg.EMBEDDING.HEIGHT_NUM
         self.cate = self.model_cfg.EMBEDDING.FEAT_DIM
         self.loss_weight = loss_cfg
 
-        self.module_list = self.build_compressor()
+        self.module_list = self.build_model(self.compressor_topology, skip_list=[])
 
     def nn_forward(self, batch_dict):
 

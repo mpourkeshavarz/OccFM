@@ -8,7 +8,7 @@ from einops import rearrange
 
 from torch.jit import fork, wait
 
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.nn import DataParallel
 # constants
 
@@ -22,9 +22,6 @@ def exists(val):
 def default(val, d):
     return val if exists(val) else d
 
-def to_same_dtype(*tensors, dtype):
-    return [t.to(dtype=dtype) for t in tensors]
-
 # flash attention forwards and backwards
 
 # flash attention v1 - https://arxiv.org/abs/2205.14135
@@ -34,13 +31,15 @@ class FlashAttentionFunction(Function):
     @staticmethod
     @torch.no_grad()
     def forward(ctx, q, k, v, mask, causal, q_bucket_size, k_bucket_size):
-        device, dtype = q.device, q.dtype
-        max_neg_value = -torch.finfo(dtype).max
+        """ Algorithm 1 in the v2 paper """
+
+        device = q.device
+        max_neg_value = -torch.finfo(q.dtype).max
         qk_len_diff = max(k.shape[-2] - q.shape[-2], 0)
 
         o = torch.zeros_like(q)
-        all_row_sums = torch.zeros((*q.shape[:-1], 1), device=device, dtype=dtype)
-        all_row_maxes = torch.full((*q.shape[:-1], 1), max_neg_value, device=device, dtype=dtype)
+        all_row_sums = torch.zeros((*q.shape[:-1], 1), device = device)
+        all_row_maxes = torch.full((*q.shape[:-1], 1), max_neg_value, device = device)
 
         scale = (q.shape[-1] ** -0.5)
 
@@ -54,23 +53,23 @@ class FlashAttentionFunction(Function):
             col_masks = (None,) * num_col_tiles
             mask = (col_masks,) * num_row_tiles
         else:
-            mask = ((mask,) * num_row_tiles) if mask.shape[-2] == 1 else mask.split(q_bucket_size, dim=-2)
-            mask = tuple(((row_mask,) * num_col_tiles) if row_mask.shape[-1] == 1 else row_mask.split(k_bucket_size, dim=-1) for row_mask in mask)
+            mask = ((mask,) * num_row_tiles) if mask.shape[-2] == 1 else mask.split(q_bucket_size, dim = -2)
+            mask = tuple(((row_mask,) * num_col_tiles) if row_mask.shape[-1] == 1 else row_mask.split(k_bucket_size, dim = -1) for row_mask in mask)
 
         row_splits = zip(
-            q.split(q_bucket_size, dim=-2),
-            o.split(q_bucket_size, dim=-2),
+            q.split(q_bucket_size, dim = -2),
+            o.split(q_bucket_size, dim = -2),
             mask,
-            all_row_sums.split(q_bucket_size, dim=-2),
-            all_row_maxes.split(q_bucket_size, dim=-2),
+            all_row_sums.split(q_bucket_size, dim = -2),
+            all_row_maxes.split(q_bucket_size, dim = -2),
         )
 
         for ind, (qc, oc, row_mask, row_sums, row_maxes) in enumerate(row_splits):
             q_start_index = ind * q_bucket_size - qk_len_diff
 
             col_splits = zip(
-                k.split(k_bucket_size, dim=-2),
-                v.split(k_bucket_size, dim=-2),
+                k.split(k_bucket_size, dim = -2),
+                v.split(k_bucket_size, dim = -2),
                 row_mask
             )
 
@@ -83,31 +82,34 @@ class FlashAttentionFunction(Function):
                     attn_weights.masked_fill_(~col_mask, max_neg_value)
 
                 if causal and q_start_index < (k_start_index + k_bucket_size - 1):
-                    causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype=torch.bool, device=device).triu(q_start_index - k_start_index + 1)
+                    causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
-                block_row_maxes = attn_weights.amax(dim=-1, keepdims=True)
+                block_row_maxes = attn_weights.amax(dim = -1, keepdims = True)
                 new_row_maxes = torch.maximum(block_row_maxes, row_maxes)
 
-                exp_weights = torch.exp((attn_weights - new_row_maxes).to(dtype))
+                exp_weights = torch.exp(attn_weights - new_row_maxes)
 
                 if exists(col_mask):
                     exp_weights.masked_fill_(~col_mask, 0.)
 
-                block_row_sums = exp_weights.sum(dim=-1, keepdims=True).clamp(min=1e-6)
+                block_row_sums = exp_weights.sum(dim = -1, keepdims = True).clamp(min = EPSILON)
 
                 exp_values = einsum('... i j, ... j d -> ... i d', exp_weights, vc)
 
-                exp_row_max_diff = torch.exp((row_maxes - new_row_maxes).to(dtype))
+                exp_row_max_diff = torch.exp(row_maxes - new_row_maxes)
+
                 new_row_sums = exp_row_max_diff * row_sums + block_row_sums
 
                 oc.mul_(exp_row_max_diff).add_(exp_values)
+
                 row_maxes.copy_(new_row_maxes)
                 row_sums.copy_(new_row_sums)
 
             oc.div_(row_sums)
 
         lse = all_row_sums.log() + all_row_maxes
+
         ctx.args = (causal, scale, mask, q_bucket_size, k_bucket_size)
         ctx.save_for_backward(q, k, v, o, lse)
 
@@ -116,10 +118,14 @@ class FlashAttentionFunction(Function):
     @staticmethod
     @torch.no_grad()
     def backward(ctx, do):
+        """ Algorithm 2 in the v2 paper """
+
         causal, scale, mask, q_bucket_size, k_bucket_size = ctx.args
         q, k, v, o, lse = ctx.saved_tensors
-        device, dtype = q.device, q.dtype
-        max_neg_value = -torch.finfo(dtype).max
+
+        device = q.device
+
+        max_neg_value = -torch.finfo(q.dtype).max
         qk_len_diff = max(k.shape[-2] - q.shape[-2], 0)
 
         dq = torch.zeros_like(q)
@@ -127,22 +133,22 @@ class FlashAttentionFunction(Function):
         dv = torch.zeros_like(v)
 
         row_splits = zip(
-            q.split(q_bucket_size, dim=-2),
-            o.split(q_bucket_size, dim=-2),
-            do.split(q_bucket_size, dim=-2),
+            q.split(q_bucket_size, dim = -2),
+            o.split(q_bucket_size, dim = -2),
+            do.split(q_bucket_size, dim = -2),
             mask,
-            lse.split(q_bucket_size, dim=-2),
-            dq.split(q_bucket_size, dim=-2)
+            lse.split(q_bucket_size, dim = -2),
+            dq.split(q_bucket_size, dim = -2)
         )
 
         for ind, (qc, oc, doc, row_mask, lsec, dqc) in enumerate(row_splits):
             q_start_index = ind * q_bucket_size - qk_len_diff
 
             col_splits = zip(
-                k.split(k_bucket_size, dim=-2),
-                v.split(k_bucket_size, dim=-2),
-                dk.split(k_bucket_size, dim=-2),
-                dv.split(k_bucket_size, dim=-2),
+                k.split(k_bucket_size, dim = -2),
+                v.split(k_bucket_size, dim = -2),
+                dk.split(k_bucket_size, dim = -2),
+                dv.split(k_bucket_size, dim = -2),
                 row_mask
             )
 
@@ -152,24 +158,18 @@ class FlashAttentionFunction(Function):
                 attn_weights = einsum('... i d, ... j d -> ... i j', qc, kc) * scale
 
                 if causal and q_start_index < (k_start_index + k_bucket_size - 1):
-                    causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype=torch.bool, device=device).triu(q_start_index - k_start_index + 1)
+                    causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
-                p = torch.exp((attn_weights - lsec).to(dtype))
+                p = torch.exp(attn_weights - lsec)
 
                 if exists(col_mask):
                     p.masked_fill_(~col_mask, 0.)
 
-                doc = doc.to(dtype)
-                vc = vc.to(dtype)
-                oc = oc.to(dtype)
-                kc = kc.to(dtype)
-                qc = qc.to(dtype)
-
                 dv_chunk = einsum('... i j, ... i d -> ... j d', p, doc)
                 dp = einsum('... i d, ... j d -> ... i j', doc, vc)
 
-                D = (doc * oc).sum(dim=-1, keepdims=True)
+                D = (doc * oc).sum(dim = -1, keepdims = True)
                 ds = p * scale * (dp - D)
 
                 dq_chunk = einsum('... i j, ... j d -> ... i d', ds, kc)
@@ -180,6 +180,7 @@ class FlashAttentionFunction(Function):
                 dvc.add_(dv_chunk)
 
         return dq, dk, dv, None, None, None, None
+
 # main class
 
 # just flash attention in plain pytorch
@@ -198,7 +199,7 @@ class FlashAttention(nn.Module):
         q_bucket_size = 512,
         k_bucket_size = 1024,
         parallel = False,
-        mixed_precision = False
+        mixed_precision = True
     ):
         super().__init__()
         self.heads = heads
@@ -241,6 +242,11 @@ class FlashAttention(nn.Module):
 
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=h), (q, k, v))
 
+        #print("Q mean/std:", q.mean().item(), q.std().item())
+        #print("K mean/std:", k.mean().item(), k.std().item())
+        #print("QK^T scale before softmax:", (q @ k.transpose(-2, -1)).mean().item(),
+        #      (q @ k.transpose(-2, -1)).std().item())
+
         if self.parallel:
             # Split the input data into chunks and move each chunk to the correct GPU
             num_gpus = torch.cuda.device_count()
@@ -250,7 +256,7 @@ class FlashAttention(nn.Module):
 
         if self.mixed_precision:
             # Use autocast to allow operations to run in lower precision
-            with autocast():
+            with autocast('cuda'):
                 out = FlashAttentionFunction.apply(q, k, v, mask, self.causal, q_bucket_size, k_bucket_size)
         else:
             out = FlashAttentionFunction.apply(q, k, v, mask, self.causal, q_bucket_size, k_bucket_size)
