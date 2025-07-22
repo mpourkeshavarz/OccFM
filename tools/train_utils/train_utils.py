@@ -13,11 +13,15 @@ from tools.common_utils.display_utils import format_disp_dict
 import torch.distributed as dist
 from rich.console import Console
 import os
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_epoch, optim_cfg,
-                model_func, ckpt_path, console, progress,
+                model_func, ckpt_path, console, progress, ema_model=None,
                 eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None):
+    # DDP after load parameters
+    # encoder/decoder param also include but no grad
+    model = DDP(model, device_ids=[rank])
 
     train_loader.sampler.set_epoch(start_epoch)
     scaler = torch.amp.GradScaler(enabled=use_amp, init_scale=optim_cfg.get('LOSS_SCALE_FP16', 10))
@@ -49,6 +53,9 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 scaler.update()
                 lr_scheduler.step()
 
+                if ema_model is not None:
+                    ema_model.update_parameters(model.module)
+
                 if is_main_process:
                     progress.update(step_task, advance=1)
                     tb_dict['lr'] = optimizer.param_groups[0]['lr']
@@ -64,7 +71,10 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
             current_epoch = epoch + 1
             if val_loader is not None and current_epoch % eval_interval == 0:
-                val_avg_loss = val_model(model, val_loader, model_func, progress, live, use_amp=use_amp, rank=rank, is_main_process=is_main_process)
+
+                eval_model = ema_model if ema_model is not None else model
+
+                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, use_amp=use_amp, rank=rank, is_main_process=is_main_process)
 
                 if is_main_process:
                     current_loss = val_avg_loss[loss_monitor if loss_monitor is not None else 'loss']
@@ -76,6 +86,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
                         torch.save({
                             'state_dict': model.state_dict(),
+                            'ema_model': ema_model.state_dict() if ema_model is not None else None,
                             'optimizer_states': [optimizer.state_dict()],
                             'epoch': current_epoch,
                             'scaler_state_dict': scaler.state_dict() if use_amp else None,

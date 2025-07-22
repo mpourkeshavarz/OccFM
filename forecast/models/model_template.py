@@ -111,8 +111,7 @@ class ModelTemplate(nn.Module):
     def forward(self, **kwargs):
         raise NotImplementedError
 
-    # @staticmethod
-    def recover_training(self, weight_path):
+    def recover_training(self, weight_path, freeze_compressor):
 
         pl_sd = torch.load(weight_path, map_location="cpu", weights_only=True)
 
@@ -148,6 +147,11 @@ class ModelTemplate(nn.Module):
             if key.startswith('module') else pl_sd['state_dict']
         self.load_state_dict(new_param_dict)
 
+        if freeze_compressor:
+            for module in self.compressor_topology:
+                freeze_module = getattr(self, '%s' % module)
+                freeze_module.requires_grad_(False)
+
         """
         old_name, weight = list(pl_sd['state_dict'].keys()), list(pl_sd['state_dict'].values())
         current_name = [x[0] for x in self.state_dict().items()]
@@ -181,6 +185,11 @@ class ModelTemplate(nn.Module):
         new_param_dict = common_utils.remove_module_prefix_from_ddp(compressor_weight['state_dict']) \
             if key.startswith('module') else compressor_weight['state_dict']
         self.load_state_dict(new_param_dict, strict=False)
+        # Freeze compressor
+        for module in self.compressor_topology:
+            freeze_module = getattr(self, '%s' % module)
+            freeze_module.requires_grad_(False)
+
         return compressor_weight
 
 

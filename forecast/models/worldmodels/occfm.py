@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from einops import reduce, rearrange
 
 from forecast.models.model_template import ModelTemplate
-from forecast.utils.common_utils import merge_dicts, cuda_timer
+from forecast.utils.common_utils import merge_dicts, cuda_timer, cpu_timer
 
 
 class OccFM(ModelTemplate):
@@ -40,7 +40,7 @@ class OccFM(ModelTemplate):
         net_input = torch.concat((condition_clip_cfg, noised_future), dim=1)
 
         batch_dict['noised_sequence'] = net_input
-        batch_dict['timesteps'] = t.squeeze().unsqueeze(0) * self.time_scalar
+        batch_dict['timesteps'] = t.squeeze() * self.time_scalar
 
         for cur_module in self.module_list:
             batch_dict = cur_module(batch_dict)

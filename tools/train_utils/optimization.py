@@ -2,6 +2,7 @@ import torch
 import math
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
+from torch.optim.swa_utils import AveragedModel
 
 def split_weight(all_parameters):
     params_decay = []
@@ -47,3 +48,8 @@ def build_scheduler(optimizer, scheduler_cfg, training_length_ep, last_epoch=-1)
     # here epoch is epoch for optimizer
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
     return scheduler
+
+def build_ema(model, ema_decay=0.999):
+    ema_model = AveragedModel(model, avg_fn=torch.optim.swa_utils.get_ema_avg_fn(ema_decay), use_buffers = True)
+    return ema_model
+

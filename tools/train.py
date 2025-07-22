@@ -16,7 +16,7 @@ from forecast.config import cfg_from_yaml_file
 from forecast.datasets import build_dataloader, reset_batch_size
 from forecast.models import build_network, model_fn_decorator
 
-from train_utils.optimization import build_optimizer, build_scheduler
+from train_utils.optimization import build_optimizer, build_scheduler, build_ema
 from train_utils.train_utils import train_model
 from common_utils.display_utils import setup_loggers, show_eval
 from rich.live import Live
@@ -43,6 +43,7 @@ def parse_config():
 
     parser.add_argument('--cache_mode', action='store_true', default=False, help='')
     parser.add_argument('--amp', action='store_true', default=False, help='')
+    parser.add_argument('--use_ema', action='store_true', default=False, help='')
     parser.add_argument('--mu_sigma_cache', action='store_true', default=False, help='')
 
     parser.add_argument('--save_path', type=str, default=None, help='checkpoint to start from')
@@ -109,35 +110,37 @@ if __name__ == '__main__':
     )
 
     optimizer = build_optimizer(cfg.OPTIMIZATION, model, world_size)
+    ema_model = build_ema(model) if args.use_ema else None
 
     progress, console = setup_loggers()
 
-    model_status = model.recover_training(args.ckpt)
     if recover_training:
-        # TODO: move back recover
-        if False:
-            optimizer.load_state_dict(model_status['optimizer_states'][0])
-            scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_set), last_epoch=-1)
-            scheduler.load_state_dict(model_status['optimizer_states']['sched'])
+        model_status = model.recover_training(args.ckpt, freeze_compressor=hasattr(model, 'transition_model'))
+        optimizer.load_state_dict(model_status['optimizer_states'][0])
+        scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_set), last_epoch=-1)
+        scheduler.load_state_dict(model_status['lr_scheduler'])
+        if ema_model is not None:
+            ema_model.load_state_dict(model_status['ema_model'])
 
-            # DDP after load parameters
-            model = DDP(model, device_ids=[rank])
-
-            if cfg.OPTIMIZATION.NUM_EPOCHS > model_status['epoch']:
-                train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, is_main_process=is_main_process,
-                            ckpt_path=output_dir + '/ckpt/', start_epoch=model_status['epoch'], optim_cfg=cfg.OPTIMIZATION, rank=rank,
-                            eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, use_amp=args.amp)
-            else:
-                if is_main_process:
-                    console.print(
-                        "[bold magenta]✔️ All training epochs completed. The model is fully trained and ready for evaluation or deployment.[/bold magenta]")
+        if cfg.OPTIMIZATION.NUM_EPOCHS > model_status['epoch']:
+            train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, is_main_process=is_main_process,
+                        ckpt_path=output_dir + '/ckpt/', start_epoch=model_status['epoch'], optim_cfg=cfg.OPTIMIZATION, rank=rank, ema_model=ema_model,
+                        eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, use_amp=args.amp)
+        else:
+            if is_main_process:
+                console.print(
+                    "[bold magenta]✔️ All training epochs completed. The model is fully trained and ready for evaluation or deployment.[/bold magenta]")
 
     else:
-        model_status = model.recover_compressor(cfg.COMPRESSOR_CONFIG.PRETRAIN_WEIGHT)
-        scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_set))
+        # If from scratch, recover data compressor parameters
+        _ = model.recover_compressor(cfg.COMPRESSOR_CONFIG.PRETRAIN_WEIGHT) if hasattr(model, 'transition_model') else None
+        scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader))
+
         train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, rank=rank,
         use_amp = args.amp, ckpt_path=output_dir + '/ckpt/', start_epoch=0, optim_cfg=cfg.OPTIMIZATION, is_main_process=is_main_process,
-        eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR)
+        eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, ema_model=ema_model)
+
+    model = ema_model if ema_model is not None else model
 
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:

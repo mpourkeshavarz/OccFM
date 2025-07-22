@@ -29,7 +29,7 @@ def format_disp_dict(disp_dict):
 
     for key, val in disp_dict.items():
         if abs(val) < 1e-3 or abs(val) >= 1e4:
-            value_str = f"{val:.2e}"
+            value_str = f"{val:.5e}"
         else:
             value_str = f"{val:.4f}"
 

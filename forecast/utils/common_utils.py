@@ -5,6 +5,7 @@ from easydict import EasyDict
 from itertools import repeat
 import collections.abc
 import functools
+import time
 
 def _ntuple(n):
     def parse(x):
@@ -74,11 +75,25 @@ def cuda_timer(fn):
         torch.cuda.synchronize()
         starter.record()
 
-        out = fn(*args, **kwargs)          # 执行原函数
+        out = fn(*args, **kwargs)
 
         ender.record()
         torch.cuda.synchronize()
-        elapsed = starter.elapsed_time(ender) / 1000.0  # 秒
+        elapsed = starter.elapsed_time(ender) / 1000.0
+        #elapsed = (end - start) / 1000
 
-        return out, elapsed               # 若只想返回 out，可改成 return out
+        return out, elapsed
+    return wrapper
+
+def cpu_timer(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+
+        out = fn(*args, **kwargs)
+
+        end = time.time()
+        elapsed = end - start
+
+        return out, elapsed
     return wrapper
