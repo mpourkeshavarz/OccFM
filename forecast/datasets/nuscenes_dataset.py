@@ -77,7 +77,7 @@ class NuScenesDataset(DatasetTemplate):
             paths = self.all_samples[sample_idx - self.sequence_length: sample_idx]
             data_dict = {
                 'paths': self.all_samples[sample_idx - self.sequence_length: sample_idx],
-                'trajectory': self.traj[sample_idx - self.sequence_length: sample_idx],
+                'trajectory': np.concat(self.traj[sample_idx - self.sequence_length: sample_idx]),
                 'semantic_occ': [np.load(path)['semantics'] for path in paths] if len(paths) > 1 else np.load(paths[0])['semantics']
             }
         return data_dict

@@ -70,7 +70,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                 progress.update(val_task, advance=1)
                 console_live.update(Group(progress, format_disp_dict(tb_dict)))
 
-    dist.barrier()
+    dist.barrier(device_ids=[rank])
     all_miou = mIoU_counter._after_epoch()
     all_iou = IoU_counter._after_epoch()
     avg_dict = metrics_mean_counter.compute()

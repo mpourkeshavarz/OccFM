@@ -117,7 +117,7 @@ if __name__ == '__main__':
     if recover_training:
         model_status = model.recover_training(args.ckpt, freeze_compressor=hasattr(model, 'transition_model'))
         optimizer.load_state_dict(model_status['optimizer_states'][0])
-        scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_set), last_epoch=-1)
+        scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader), last_epoch=-1)
         scheduler.load_state_dict(model_status['lr_scheduler'])
         if ema_model is not None:
             ema_model.load_state_dict(model_status['ema_model'])
@@ -145,11 +145,14 @@ if __name__ == '__main__':
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
+        if not isinstance(model, DDP):
+            model = DDP(model, device_ids=[rank])
+
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
 
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
-                                 test_cfm=hasattr(model, 'transition_model'),
+                                 test_cfm=hasattr(model.module, 'transition_model'),
                                  use_amp=args.amp, eval_iou=True, eval_fps=True, is_main_process=is_main_process)
         if is_main_process:
             show_eval(val_avg_loss, console)
