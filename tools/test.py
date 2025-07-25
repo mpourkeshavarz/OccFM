@@ -46,9 +46,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                 metrics_mean_counter.update(tb_dict)
 
                 if eval_iou:
-
                     if 'gt_occ' not in val_disp_dict:
-                        all_seq_gtocc_path = batch['paths'][0][:sequence_length]
+                        all_seq_gtocc_path = batch['paths'][0][sequence_length:]
                         gt_occ = torch.as_tensor(np.stack([np.load(x)['semantics'] for x in all_seq_gtocc_path])).unsqueeze(0)
                     else:
                         gt_occ = val_disp_dict['gt_occ'].detach().cpu()

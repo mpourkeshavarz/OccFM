@@ -61,6 +61,9 @@ class OccFM(ModelTemplate):
         t_shifted = 1 - (self.alpha * timesteps) / (1 + (self.alpha - 1) * timesteps)
         t_shifted = t_shifted.flip(0)
 
+        traj = batch_dict['trajectory']
+        batch_dict['trajectory'] = torch.cat([traj] * 2) if traj is not None else traj
+
         # Solve ODE
         for t_curr, t_prev in zip(t_shifted[:-1], t_shifted[1:]):
             step = t_prev - t_curr
@@ -73,7 +76,7 @@ class OccFM(ModelTemplate):
             t = torch.cat([t] * 2, dim=1).reshape(-1, )
 
             batch_dict['noised_sequence'] = cfg_input
-            batch_dict['timesteps'] = t.squeeze() * self.time_scalar
+            batch_dict['timesteps'] = t.squeeze()
 
             for cur_module in self.module_list:
                 batch_dict = cur_module(batch_dict)

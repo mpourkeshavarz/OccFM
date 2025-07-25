@@ -16,7 +16,7 @@ from forecast.config import cfg_from_yaml_file
 from forecast.datasets import build_dataloader, reset_batch_size
 from forecast.models import build_network, model_fn_decorator
 
-from train_utils.optimization import build_optimizer, build_scheduler, build_ema
+from train_utils.optimization import build_optimizer, build_scheduler, build_ema, build_optimizer_old
 from train_utils.train_utils import train_model
 from common_utils.display_utils import setup_loggers, show_eval
 from rich.live import Live
@@ -43,6 +43,7 @@ def parse_config():
 
     parser.add_argument('--cache_mode', action='store_true', default=False, help='')
     parser.add_argument('--amp', action='store_true', default=False, help='')
+    parser.add_argument('--skip_opti', action='store_true', default=False, help='')
     parser.add_argument('--use_ema', action='store_true', default=False, help='')
     parser.add_argument('--mu_sigma_cache', action='store_true', default=False, help='')
 
@@ -59,7 +60,7 @@ if __name__ == '__main__':
     args, cfg = parse_config()
 
     if args.fix_random_seed:
-        common_utils.set_random_seed(666)
+        common_utils.set_random_seed(1000)
 
     recover_training = False
     if getattr(args, 'ckpt', None) is not None and isfile(args.ckpt):
@@ -98,6 +99,7 @@ if __name__ == '__main__':
     is_main_process = (rank == 0)
 
     model = build_network(model_cfg=cfg.MODEL, loss_cfg=cfg.LOSS, cache_mode=cfg.CACHE_MODE).to(rank)
+    ema_model = build_ema(model).to(rank) if args.use_ema else None
 
     train_set, train_loader = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,
@@ -109,16 +111,16 @@ if __name__ == '__main__':
         cache_mode=cfg.CACHE_MODE, training=False, rank=rank, world_size=world_size
     )
 
-    optimizer = build_optimizer(cfg.OPTIMIZATION, model, world_size)
-    ema_model = build_ema(model) if args.use_ema else None
-
+    # optimizer = build_optimizer(cfg.OPTIMIZATION, model, world_size, freeze_compressor=hasattr(model, 'transition_model'))
+    optimizer = build_optimizer_old(cfg.OPTIMIZATION, model, world_size)
     progress, console = setup_loggers()
 
     if recover_training:
-        model_status = model.recover_training(args.ckpt, freeze_compressor=hasattr(model, 'transition_model'))
-        optimizer.load_state_dict(model_status['optimizer_states'][0])
+        model_status = model.recover_training(args.ckpt)
         scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader), last_epoch=-1)
-        scheduler.load_state_dict(model_status['lr_scheduler'])
+        if not args.skip_opti:
+            optimizer.load_state_dict(model_status['optimizer_states'][0])
+            scheduler.load_state_dict(model_status['lr_scheduler'])
         if ema_model is not None:
             ema_model.load_state_dict(model_status['ema_model'])
 
@@ -132,7 +134,7 @@ if __name__ == '__main__':
                     "[bold magenta]✔️ All training epochs completed. The model is fully trained and ready for evaluation or deployment.[/bold magenta]")
 
     else:
-        # If from scratch, recover data compressor parameters
+        # If from scratch, recover data compressor parameters, then build ema model
         _ = model.recover_compressor(cfg.COMPRESSOR_CONFIG.PRETRAIN_WEIGHT) if hasattr(model, 'transition_model') else None
         scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader))
 
@@ -145,14 +147,14 @@ if __name__ == '__main__':
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
-        if not isinstance(model, DDP):
+        if not isinstance(model.module, DDP):
             model = DDP(model, device_ids=[rank])
 
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
 
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
-                                 test_cfm=hasattr(model.module, 'transition_model'),
+                                 test_cfm=hasattr(model.module.module, 'transition_model'), # DDP -> EMA -> Model wrap
                                  use_amp=args.amp, eval_iou=True, eval_fps=True, is_main_process=is_main_process)
         if is_main_process:
             show_eval(val_avg_loss, console)

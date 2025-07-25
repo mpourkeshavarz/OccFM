@@ -4,9 +4,12 @@ import torch
 from .others import Normalize, exists, Mlp
 from einops import rearrange
 from einops_exts import check_shape, rearrange_many
+from torch.nn.attention import sdpa_kernel, SDPBackend
 
 from forecast.ops.flash_attention.flash_attention import FlashAttention
 from torch import einsum
+
+attn_backend = [SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]
 
 class AttnBlock(nn.Module):
     def __init__(self, in_channels):
@@ -138,6 +141,7 @@ class DiTAttention(nn.Module):
         if self.attention_mode == 'flash':
             # cause loss nan while using with amp
             # Optionally use the context manager to ensure one of the fused kerenels is run
+            #with torch.nn.attention.sdpa_kernel(attn_backend):
             with torch.backends.cuda.sdp_kernel(enable_math=False):
                 x = torch.nn.functional.scaled_dot_product_attention(q, k, v).reshape(B, N, C) # require pytorch 2.0
 
