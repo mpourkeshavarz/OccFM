@@ -22,6 +22,8 @@ from common_utils.display_utils import setup_loggers, show_eval
 from rich.live import Live
 from tools.test import val_model
 
+from torch.optim.swa_utils import AveragedModel
+
 from rich.console import Console
 from cache_vae import cache_model
 
@@ -147,15 +149,17 @@ if __name__ == '__main__':
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
-        if not isinstance(model.module, DDP):
-            model = DDP(model, device_ids=[rank])
+        model = DDP(model, device_ids=[rank]) if recover_training else None
+        test_cfm = hasattr(model.module.module, 'transition_model') if isinstance(model, AveragedModel) else \
+            hasattr(model.module, 'transition_model')
 
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
 
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
-                                 test_cfm=hasattr(model.module.module, 'transition_model'), # DDP -> EMA -> Model wrap
-                                 use_amp=args.amp, eval_iou=True, eval_fps=True, is_main_process=is_main_process)
+                                 test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
+                                 is_main_process=is_main_process)
+
         if is_main_process:
             show_eval(val_avg_loss, console)
 

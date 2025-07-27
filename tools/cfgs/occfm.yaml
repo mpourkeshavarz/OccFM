@@ -6,8 +6,8 @@ LOSS_MONITOR: 'mse_loss'
 
 DATA_CONFIG:
     _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
-    PICKLE_PATH: {'train': './data/nus_sem_occ_training.pkl',
-                  'test': './data/nus_sem_occ_validation.pkl'}
+    PICKLE_PATH: {'train': './data/x16/nus_sem_occ_training.pkl',
+                  'test': './data/x16/nus_sem_occ_validation.pkl'}
     SEQUENCE_LENGTH: 6
     SEM_MODE: True
 
