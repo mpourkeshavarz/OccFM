@@ -70,8 +70,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                 console_live.update(Group(progress, format_disp_dict(tb_dict)))
 
     dist.barrier(device_ids=[rank])
-    all_miou = mIoU_counter._after_epoch()
-    all_iou = IoU_counter._after_epoch()
+    all_miou, cate_miou = mIoU_counter._after_epoch()
+    all_iou, cate_iou = IoU_counter._after_epoch()
     avg_dict = metrics_mean_counter.compute()
 
     if is_main_process:
@@ -80,6 +80,12 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
         avg_dict["all_miou"] = all_miou
         avg_dict["all_iou"] = all_iou
+
+        if val_loader.dataset.sem_mode:
+            cate_miou = np.mean(cate_miou, axis=0)
+            cate_miou = dict(zip(label_name, cate_miou*100))
+            avg_dict['cate_miou'] = cate_miou
+
     else:
         avg_dict = {}
     return avg_dict

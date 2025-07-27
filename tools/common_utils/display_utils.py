@@ -66,6 +66,13 @@ def show_eval(avg_dict, console):
     time_avg = avg_dict['time']
     mean_miou, mean_iou = np.mean(all_miou), np.mean(all_iou)
 
+    if 'cate_miou' in avg_dict and isinstance(avg_dict['cate_miou'], dict):
+        extra_table = Table(title="MIOU on each category", box=box.SIMPLE_HEAVY)
+        for key in avg_dict['cate_miou'].keys():
+            extra_table.add_column(str(key), justify="center", style="bold white")
+        extra_table.add_row(*[f"{v:.2f}" if isinstance(v, float) else str(v) for v in avg_dict['cate_miou'].values()])
+        console.print(extra_table)
+
     summary_panels = [
         Panel.fit(f"[bold green]{mean_miou:.4f}[/bold green]", title="Mean mIoU", border_style="magenta"),
         Panel.fit(f"[bold yellow]{mean_iou:.4f}[/bold yellow]", title="Mean IoU", border_style="cyan"),

@@ -45,7 +45,7 @@ class NuScenesDataset(DatasetTemplate):
             with open(path, 'rb') as f:
                 cached_files = pickle.load(f)
             gt_path = [x['gt_path'][0] for x in cached_files]
-            token_seq = [x.split('/')[4] for x in gt_path]
+            token_seq = [x[0].split('/')[4] if isinstance(x, list) else x.split('/')[4] for x in gt_path]
             token_ori_sort = []
             for scene_idx, value in self.infos.items():
                 for frame in value:
@@ -57,7 +57,7 @@ class NuScenesDataset(DatasetTemplate):
             self.all_samples = [x['gt_path'][0] for x in sorted_cache_file]
             self.x_sampled = [x['x_sampled'] for x in sorted_cache_file]
             self.valid_idx = []
-            scenes_list = [x.split('/')[3] for x in self.all_samples]
+            scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
             for idx, scene in enumerate(scenes_list):
                 sub_seq = scenes_list[idx: idx + self.sequence_length * 2]
                 if len(set(sub_seq)) == 1 and len(sub_seq) == self.sequence_length * 2:

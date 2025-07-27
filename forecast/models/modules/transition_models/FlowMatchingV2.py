@@ -10,7 +10,7 @@ from forecast.models.modules.base.dit import DiTBlock
 from forecast.models.modules.base.postion_embed import (RelativePositionBias, get_2d_sincos_pos_embed, timestep_embedding,
                                                         get_1d_sincos_temp_embed, get_fourier_embeds_from_coordinates)
 
-class FLOW_MATCHING_DOWN_X4_DiT_D16(nn.Module):
+class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
     def __init__(self, in_channels=3, out_channels=96, traj_fourier_freq=8, model_channels=None, channel_multi=None,
                  input_size=None, trajectory_length=None, init_kernel_size=None, init_3d_conv_channels=None, attn_dim=None,
                  temporal_attn_head=None, spatial_attn_head=None, **kwargs):

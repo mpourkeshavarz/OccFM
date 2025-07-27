@@ -125,6 +125,7 @@ class multi_step_MeanIou:
             dist.all_reduce(self.total_correct)
             dist.all_reduce(self.total_positive)
         mious = []
+        raw_ious_per_frame = []
         for t in range(self.times):
             ious = []
             for i in range(self.num_classes):
@@ -135,7 +136,7 @@ class multi_step_MeanIou:
                                                           + self.total_positive[t, i]
                                                           - self.total_correct[t, i])
                     ious.append(cur_iou.item())
-            # print(ious)
+            raw_ious_per_frame.append(ious)
             miou = np.mean(ious)
             mious.append(miou * 100)
-        return mious
+        return mious, np.asarray(raw_ious_per_frame)
