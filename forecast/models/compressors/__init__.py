@@ -1,9 +1,11 @@
 from forecast.models.model_template import ModelTemplate
 from .occfm_vae import OccFmVAE
+from .occfm_vae3d import OccFmVAE3D
 
 __all__ = {
     'ModelTemplate' : ModelTemplate,
     'OccFmVAE' : OccFmVAE,
+    'OccFmVAE3D': OccFmVAE3D
 }
 
 

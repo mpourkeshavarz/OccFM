@@ -48,7 +48,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                 if eval_iou:
                     if 'gt_occ' not in val_disp_dict:
                         all_seq_gtocc_path = batch['paths'][0][sequence_length:]
-                        gt_occ = torch.as_tensor(np.stack([np.load(x)['semantics'] for x in all_seq_gtocc_path])).unsqueeze(0)
+                        gt_occ = torch.as_tensor(np.stack([np.load(x[0])['semantics'] if isinstance(x, list)
+                                                           else np.load(x)['semantics'] for x in all_seq_gtocc_path])).unsqueeze(0)
                     else:
                         gt_occ = val_disp_dict['gt_occ'].detach().cpu()
 

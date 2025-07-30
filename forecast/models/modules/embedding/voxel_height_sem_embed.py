@@ -44,12 +44,22 @@ class VoxelHeightSemEmbed(nn.Module):
         sem_occ = data_dict["semantic_occ"]
         input = self.class_embeds(sem_occ.long())
         height_range = torch.arange(0, 16, device=input.device).long()
-        height_embed = self.height_embedding[height_range][None, None, None, ...]
-        height_embed = height_embed.expand(input.shape[0], input.shape[1], input.shape[2], -1, -1)
-        input = torch.concat((input, height_embed), dim=-1)
 
-        input = rearrange(input, 'b h w c d -> b (c d) h w')
-        input = self.pre_pillar_feature(input)
+        if len(sem_occ.shape) == 4:
+            height_embed = self.height_embedding[height_range][None, None, None, ...]
+            height_embed = height_embed.expand(input.shape[0], input.shape[1], input.shape[2], -1, -1)
+            input = torch.concat((input, height_embed), dim=-1)
+            input = rearrange(input, 'b h w c d -> b (c d) h w')
+            input = self.pre_pillar_feature(input)
+
+        elif len(sem_occ.shape) == 5: # video embedding
+            frame = data_dict["semantic_occ"].shape[1]
+            height_embed = self.height_embedding[height_range][None, None, None, None, ...]
+            height_embed = height_embed.expand(input.shape[0], input.shape[1], input.shape[2], input.shape[3], -1, -1)
+            input = torch.concat((input, height_embed), dim=-1)
+            input = rearrange(input, 'b f h w c d -> (b f) (c d) h w')
+            input = self.pre_pillar_feature(input)
+            # input = rearrange(input, '(b f) p h w -> b f p h w', f=frame)
 
         data_dict['bev_features'] = input
         return data_dict

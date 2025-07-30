@@ -9,7 +9,7 @@ from forecast.utils.loss_utils import lovasz_softmax
 
 import torch.nn.functional as F
 
-class OccFmVAE(ModelTemplate):
+class OccFmVAE3D(ModelTemplate):
     def __init__(self, model_cfg, loss_cfg, **kwargs):
         super().__init__(model_cfg.COMPRESSOR_CONFIG)
         self.input_height = self.model_cfg.EMBEDDING.HEIGHT_NUM
@@ -18,15 +18,17 @@ class OccFmVAE(ModelTemplate):
 
         self.module_list = self.build_model(self.compressor_topology, skip_list=[])
 
-    @cuda_timer
     def nn_forward(self, batch_dict):
 
         for cur_module in self.module_list:
             batch_dict = cur_module(batch_dict)
 
         decoded_map = batch_dict['decoded_map']
+
+        decoded_map = decoded_map.unsqueeze(0) if len(decoded_map.shape) == 4 else decoded_map
+
         template = self.embedding.class_embeds.weight.T.unsqueeze(0).detach()
-        decoded_map = rearrange(decoded_map, 'b (d c) h w -> b h w d c', d=self.input_height, c=self.cate)
+        decoded_map = rearrange(decoded_map, 'b f (d c) h w -> b f h w d c', d=self.input_height, c=self.cate)
         similarity = torch.matmul(decoded_map, template)
         batch_dict['similarity'] = similarity
 
@@ -34,8 +36,8 @@ class OccFmVAE(ModelTemplate):
 
     def forward(self, batch_dict, **kwargs):
         eval_fps = batch_dict.get('eval_fps', False)
-
-        batch_dict, forward_time = self.nn_forward(batch_dict)
+        forward_time = None
+        batch_dict = self.nn_forward(batch_dict)
         loss, tb_dict, disp_dict = self.get_training_loss(batch_dict)
 
         if eval_fps and forward_time is not None:
@@ -47,6 +49,10 @@ class OccFmVAE(ModelTemplate):
 
         pred_occ, gt_occ = batch_dict['similarity'], batch_dict['semantic_occ']
         gt_occ = gt_occ.long()
+
+        gt_occ = rearrange(gt_occ, 'b f h w d-> (b f) h w d')
+        pred_occ = rearrange(pred_occ, 'b f h w d c-> (b f) h w d c')
+
         tb_dict, disp_dict = {}, {}
 
         rec_loss = F.cross_entropy(pred_occ.permute(0, 4, 1, 2, 3), gt_occ, ignore_index=-100)

@@ -5,6 +5,7 @@ from ..base.swin_transformerbase import BasicLayer
 from ..base.res_layersbase import Residual_conv
 from ..base.attn_base import AttnBlock, Normalize
 from ..base.others import Upsample, nonlinearity
+from ..base.temporal_base import TemporalBlock
 
 from einops import rearrange
 
@@ -19,6 +20,8 @@ class SwinSingleFrameUpV2(nn.Module):
         self.depth = len(depth)
         self.net_blocks = nn.ModuleList()
         self.upsample_blocks = nn.ModuleList()
+        self.temporal_block = nn.ModuleList()
+        self.use_temporal = kwargs.get('temporal_block', False)
 
         for i in range(len(depth)):
             self.net_blocks.append(
@@ -37,6 +40,9 @@ class SwinSingleFrameUpV2(nn.Module):
                 raise NotImplementedError
             else:
                 raise NotImplementedError
+
+            self.temporal_block.append(TemporalBlock(patch_embed_dim, 6)) if (self.use_temporal and i==0) \
+                else self.temporal_block.append(nn.Identity())
             patched_size = patched_size * 2
 
         self.mid = nn.ModuleList()
@@ -70,7 +76,10 @@ class SwinSingleFrameUpV2(nn.Module):
             compressed_map = rearrange(compressed_map, 'b (h w) c -> b c h w', h=int(compressed_map.shape[1] ** 0.5))
 
             compressed_map = res_block(compressed_map)
+
+            compressed_map = self.temporal_block[i](compressed_map)
             compressed_map = upsample(compressed_map)
+
 
             if i != self.depth - 1:
                 compressed_map = rearrange(compressed_map, 'b h w c-> b (h w) c')

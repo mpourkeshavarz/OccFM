@@ -21,6 +21,26 @@ class Residual_conv(nn.Module):
         return conv2 + latent_features
 
 
+class ResidualConv3D(nn.Module):
+    def __init__(self, in_channel, out_channel, norm_layer=None, nonlinearity=nn.SiLU()):
+        super().__init__()
+        self.conv1 = nn.Conv3d(in_channel, out_channel, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv3d(out_channel, out_channel, kernel_size=3, stride=1, padding=1)
+
+        self.norm = nn.GroupNorm(num_groups=32, num_channels=out_channel)
+        self.nonlinearity = nonlinearity
+
+    def forward(self, latent_features):
+        x = self.conv1(latent_features)
+        x = self.norm(x)
+        x = self.nonlinearity(x)
+        x = self.conv2(x)
+
+        if x.shape[1] != latent_features.shape[1]:
+            return x  # No residual if channels mismatch
+        return x + latent_features
+
+
 class Residual(nn.Module):
     def __init__(self, fn):
         super().__init__()

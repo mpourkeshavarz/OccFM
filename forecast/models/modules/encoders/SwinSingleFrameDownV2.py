@@ -5,6 +5,7 @@ from ..base.swin_transformerbase import PatchEmbed, PatchMerging, BasicLayer
 from ..base.res_layersbase import Residual_conv
 from ..base.attn_base import AttnBlock
 from ..base.others import Normalize, nonlinearity
+from ..base.temporal_base import TemporalBlock
 
 from einops import rearrange
 
@@ -26,6 +27,9 @@ class SwinSingleFrameDownV2(nn.Module):
         self.net_blocks = nn.ModuleList()
         self.downsample_blocks = nn.ModuleList()
 
+        self.temporal_block = nn.ModuleList()
+        self.use_temporal = kwargs.get('temporal_block', False)
+
         for i in range(len(depth)):
             self.net_blocks.append(
                 BasicLayer(dim=patch_embed_dim, input_resolution=(patched_size, patched_size),
@@ -37,6 +41,7 @@ class SwinSingleFrameDownV2(nn.Module):
                 Residual_conv(patch_embed_dim, patch_embed_dim)
             )
 
+
             if downsample[i] == 'conv':
                 self.downsample_blocks.append(
                     nn.Conv2d(patch_embed_dim, patch_embed_dim * 2, kernel_size=3, stride=2, padding=1)
@@ -47,6 +52,9 @@ class SwinSingleFrameDownV2(nn.Module):
                 )
             else:
                 raise NotImplementedError
+
+            self.temporal_block.append(TemporalBlock(patch_embed_dim * 2, 6)) if self.use_temporal \
+                else self.temporal_block.append(nn.Identity())
 
             patched_size = patched_size // 2
             patch_embed_dim = patch_embed_dim * 2
@@ -78,7 +86,10 @@ class SwinSingleFrameDownV2(nn.Module):
             bev_feature = rearrange(bev_feature, 'b (h w) c -> b c h w', h=int(bev_feature.shape[1] ** 0.5))
 
             bev_feature = res_block(bev_feature)
+
             bev_feature = downsample(bev_feature)
+            bev_feature = self.temporal_block[i](bev_feature)
+
             if i != self.depth - 1:
                 bev_feature = rearrange(bev_feature, 'b c h w -> b (h w) c')
 
