@@ -65,6 +65,7 @@ if __name__ == '__main__':
         common_utils.set_random_seed(1000)
 
     recover_training = False
+
     if getattr(args, 'ckpt', None) is not None and isfile(args.ckpt):
         ori_run_name = '/'.join(args.ckpt.rstrip('/').split('/')[:-2])
         ori_yaml_path = glob.glob(ori_run_name + '/*.yaml')
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     if recover_training:
         model_status = model.recover_training(args.ckpt)
         scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader), last_epoch=-1)
-        if not args.skip_opti:
+        if not args.skip_opti: # For weight from old repo
             optimizer.load_state_dict(model_status['optimizer_states'][0])
             scheduler.load_state_dict(model_status['lr_scheduler'])
         if ema_model is not None:
@@ -150,7 +151,7 @@ if __name__ == '__main__':
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
         model = DDP(model, device_ids=[rank]) if recover_training else None
-        test_cfm = hasattr(model.module.module, 'transition_model') if isinstance(model, AveragedModel) else \
+        test_cfm = hasattr(model.module.module, 'transition_model') if isinstance(model.module, AveragedModel) else \
             hasattr(model.module, 'transition_model')
 
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)

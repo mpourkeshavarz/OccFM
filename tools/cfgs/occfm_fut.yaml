@@ -17,7 +17,7 @@ COMPRESSOR_CONFIG:
     PRETRAIN_WEIGHT: logs/occfm_vae/100ep_3docc_sem_voxel/ckpt/epoch=000100.ckpt
 
 TRANSITION_MODEL_CONFIG:
-    _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
+    _BASE_CONFIG_: tools/cfgs/transition_configs/cfm_fut_traj.yaml
 
 PLANNER_CONFIG:
     NAME: EmptyPlanner

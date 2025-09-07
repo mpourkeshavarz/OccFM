@@ -18,6 +18,7 @@ class OccFmVAE3D(ModelTemplate):
 
         self.module_list = self.build_model(self.compressor_topology, skip_list=[])
 
+    @cuda_timer
     def nn_forward(self, batch_dict):
 
         for cur_module in self.module_list:
@@ -36,8 +37,7 @@ class OccFmVAE3D(ModelTemplate):
 
     def forward(self, batch_dict, **kwargs):
         eval_fps = batch_dict.get('eval_fps', False)
-        forward_time = None
-        batch_dict = self.nn_forward(batch_dict)
+        batch_dict, forward_time = self.nn_forward(batch_dict)
         loss, tb_dict, disp_dict = self.get_training_loss(batch_dict)
 
         if eval_fps and forward_time is not None:

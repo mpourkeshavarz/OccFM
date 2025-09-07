@@ -66,6 +66,10 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
                     IoU_counter._after_step(pred_occ, gt_occ)
 
+                    #all_miou, cate_miou = mIoU_counter._after_epoch()
+                    #all_iou, cate_iou = IoU_counter._after_epoch()
+                    #print()
+
             if is_main_process:
                 progress.update(val_task, advance=1)
                 console_live.update(Group(progress, format_disp_dict(tb_dict)))
