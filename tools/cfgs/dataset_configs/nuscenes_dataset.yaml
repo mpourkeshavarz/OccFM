@@ -10,5 +10,8 @@ INFO_PATH: {
     'test': [nuscenes_infos_val_temporal_v3_scene.pkl],
 }
 
+DYNAMIC_CLASSES: ['bicycle','bus','car','construction_vehicle','motorcycle','pedestrian','trailer','truck']
 
+PREPROCESSOR:
+  CLUSTER_TOLERANCE: 6
 

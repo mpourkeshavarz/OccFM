@@ -4,6 +4,7 @@ import numpy as np
 
 from .dataset import DatasetTemplate
 from nuscenes.nuscenes import NuScenes
+from .preprocessor import Preprocessor
 
 class NuScenesDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, batch_size, training, cache_mode):
@@ -14,11 +15,19 @@ class NuScenesDataset(DatasetTemplate):
         self.label_name = dataset_cfg.label_name
         self.sequence_length = dataset_cfg.sequence_length
         self.x_sampled = None
-        self.win_size = dataset_cfg.get('win_size', 1)
         self.hist_last = dataset_cfg.get('hist_last', 6)
+
+        dataset_cfg.preprocessor['dynamic_objects'] = [dataset_cfg['label_name'].index(x) for x in dataset_cfg['dynamic_classes']]
+        dataset_cfg.preprocessor['drive_area_index'] = 11
+        dataset_cfg.preprocessor['non_vehicle_index'] = [2, 6, 7]
+        dataset_cfg.preprocessor['cate_num'] = len(self.label_name)
+
+        preprocess_step = getattr(dataset_cfg, 'preprocess_step', [])
+        self.preprocessor = Preprocessor(dataset_cfg.preprocessor, preprocess_step)
 
         pickle_path = dataset_cfg['info_path']['train' if training else 'test'][0]
         pickle_path = os.path.join(dataset_cfg['data_path'], pickle_path)
+
         with open(pickle_path, 'rb') as f:
             self.infos = pickle.load(f)['infos']
 
@@ -42,6 +51,8 @@ class NuScenesDataset(DatasetTemplate):
             # TODO: make it support non-cache cfm training
             self.select_valid(training, vae_training=True)
 
+            self.only_bg = 'filter_fg' in preprocess_step # VAE should have this step
+
         else:
             assert dataset_cfg.get('pickle_path', None) is not None, "Should provide cached pickles"
 
@@ -61,16 +72,7 @@ class NuScenesDataset(DatasetTemplate):
             self.all_samples = [x['gt_path'][0] for x in sorted_cache_file]
             self.x_sampled = [x['x_sampled'] for x in sorted_cache_file]
             self.select_valid(training) # cache mode only during cfm training
-
-    def select_valid(self, training, vae_training=False):
-        self.valid_idx = []
-        self.safe_length = self.sequence_length * 2 if not vae_training else self.sequence_length
-        scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
-        for idx, scene in enumerate(scenes_list):
-            sub_seq = scenes_list[idx: idx + self.safe_length]
-            if len(set(sub_seq)) == 1 and len(sub_seq) == self.safe_length:
-                self.valid_idx.append(idx)
-        self.valid_idx = self.valid_idx[::self.win_size] if training else self.valid_idx
+            self.only_bg = 'fg_only' in path
 
     def __getitem__(self, idx):
 
@@ -90,4 +92,6 @@ class NuScenesDataset(DatasetTemplate):
         else:
             paths = data_dict['paths']
             data_dict['semantic_occ'] = [np.load(path)['semantics'] for path in paths] if len(paths) > 1 else np.load(paths[0])['semantics']
+
+        data_dict = self.preprocessor(data_dict)
         return data_dict

@@ -6,10 +6,21 @@ class DatasetTemplate(torch_data.Dataset):
         super().__init__()
         self.training = training
         self.sequence_length = dataset_cfg.sequence_length
+        self.win_size = dataset_cfg.get('win_size', 1)
         self.valid_idx, self.all_samples, self.traj = [], [], []
 
     def __len__(self):
         return len(self.valid_idx)
+
+    def select_valid(self, training, vae_training=False):
+        self.valid_idx = []
+        self.safe_length = self.sequence_length * 2 if not vae_training else self.sequence_length
+        scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
+        for idx, scene in enumerate(scenes_list):
+            sub_seq = scenes_list[idx: idx + self.safe_length]
+            if len(set(sub_seq)) == 1 and len(sub_seq) == self.safe_length:
+                self.valid_idx.append(idx)
+        self.valid_idx = self.valid_idx[::self.win_size] if training else self.valid_idx
 
     @staticmethod
     def collate_batch(data_list, _unused=False):

@@ -12,11 +12,11 @@ from os.path import isfile
 from forecast.utils import common_utils
 from easydict import EasyDict
 from pathlib import Path
-from forecast.config import cfg_from_yaml_file
+from forecast.config import cfg_from_yaml_file, cfg_from_args
 from forecast.datasets import build_dataloader, reset_batch_size
 from forecast.models import build_network, model_fn_decorator
 
-from train_utils.optimization import build_optimizer, build_scheduler, build_ema, build_optimizer_old
+from train_utils.optimization import build_optimizer, build_scheduler, build_ema
 from train_utils.train_utils import train_model
 from common_utils.display_utils import setup_loggers, show_eval
 from rich.live import Live
@@ -50,6 +50,7 @@ def parse_config():
     parser.add_argument('--mu_sigma_cache', action='store_true', default=False, help='')
 
     parser.add_argument('--save_path', type=str, default=None, help='checkpoint to start from')
+    parser.add_argument('--eval_mode', action='store_true', default=False, help='')
 
     cfg = EasyDict()
     cfg.ROOT_DIR = (Path(__file__).resolve().parent / '../').resolve()
@@ -114,20 +115,21 @@ if __name__ == '__main__':
         cache_mode=cfg.CACHE_MODE, training=False, rank=rank, world_size=world_size
     )
 
-    # optimizer = build_optimizer(cfg.OPTIMIZATION, model, world_size, freeze_compressor=hasattr(model, 'transition_model'))
-    optimizer = build_optimizer_old(cfg.OPTIMIZATION, model, world_size)
+    optimizer = build_optimizer(cfg.OPTIMIZATION, model, world_size)
     progress, console = setup_loggers()
 
     if recover_training:
         model_status = model.recover_training(args.ckpt)
         scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader), last_epoch=-1)
-        if not args.skip_opti: # For weight from old repo
+        # For compatible with weight from old repo
+        # TODO: remove this
+        if not args.skip_opti:
             optimizer.load_state_dict(model_status['optimizer_states'][0])
             scheduler.load_state_dict(model_status['lr_scheduler'])
         if ema_model is not None:
             ema_model.load_state_dict(model_status['ema_model'])
 
-        if cfg.OPTIMIZATION.NUM_EPOCHS > model_status['epoch']:
+        if cfg.OPTIMIZATION.NUM_EPOCHS > model_status['epoch'] and not args.eval_mode:
             train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, is_main_process=is_main_process,
                         ckpt_path=output_dir + '/ckpt/', start_epoch=model_status['epoch'], optim_cfg=cfg.OPTIMIZATION, rank=rank, ema_model=ema_model,
                         eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, use_amp=args.amp)
@@ -164,10 +166,15 @@ if __name__ == '__main__':
         if is_main_process:
             show_eval(val_avg_loss, console)
 
-        cache_latent = args.cache_mode or cfg.CACHE_MODE
-        cache_mu_sigma = args.mu_sigma_cache or cfg.MU_SIGMA_CACHE
-        cache_model(model, [train_loader, val_loader], model_fn_decorator(rank), progress, live=live, console=console,
-                    cache_mode=cache_latent, mu_sigma_cache=cache_mu_sigma, save_path=args.save_path, is_main_process=is_main_process)
+        cache_mu_sigma = args.mu_sigma_cache or cfg.get("MU_SIGMA_CACHE", False)
+
+        # TODO: fix the duplicated parameters
+        # args.cache_mode used to control cache latent or not, used in VAE inference
+        # cfg.CACHE_MODE used to skip the compressor in latent CFM when inference
+        if args.cache_mode:
+            cache_model(model, [train_loader, val_loader], model_fn_decorator(rank), progress, live=live,
+                        console=console, cache_mode=args.cache_mode, mu_sigma_cache=cache_mu_sigma, save_path=args.save_path,
+                        is_main_process=is_main_process)
 
     dist.barrier(device_ids=[rank])
     dist.destroy_process_group()

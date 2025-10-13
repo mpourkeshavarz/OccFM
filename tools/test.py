@@ -33,6 +33,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
     IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, sequence_length)
     metrics_mean_counter = DistributedDictMeanCounter(rank)
 
+    only_bg = val_loader.dataset.preprocessor.dynamic_object_idx if val_loader.dataset.only_bg else None
+
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
             with torch.amp.autocast('cuda', enabled=use_amp, dtype=torch.bfloat16):
@@ -65,18 +67,16 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         gt_occ[gt_occ == len(label_name)] = 0
 
                     IoU_counter._after_step(pred_occ, gt_occ)
-
-                    #all_miou, cate_miou = mIoU_counter._after_epoch()
-                    #all_iou, cate_iou = IoU_counter._after_epoch()
-                    #print()
+                    #all_miou, cate_miou = mIoU_counter._after_epoch(only_bg)
+                    #all_iou, cate_iou = IoU_counter._after_epoch(only_bg)
 
             if is_main_process:
                 progress.update(val_task, advance=1)
                 console_live.update(Group(progress, format_disp_dict(tb_dict)))
 
     dist.barrier(device_ids=[rank])
-    all_miou, cate_miou = mIoU_counter._after_epoch()
-    all_iou, cate_iou = IoU_counter._after_epoch()
+    all_miou, cate_miou = mIoU_counter._after_epoch(only_bg)
+    all_iou, cate_iou = IoU_counter._after_epoch(only_bg)
     avg_dict = metrics_mean_counter.compute()
 
     if is_main_process:

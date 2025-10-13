@@ -16,22 +16,6 @@ def split_weight(all_parameters):
                 params_decay.append(param)
     return params_decay, params_no_decay
 
-def build_optimizer_old(optimizer_cfg, model, world_size):
-
-    lr = optimizer_cfg['BASE_LR'] * optimizer_cfg['BATCH_SIZE_PER_GPU'] * world_size
-    params_decay, params_no_decay = split_weight(model.named_parameters())
-
-    if optimizer_cfg['NAME'] == 'ADAM':
-        opt = torch.optim.AdamW([
-            {"params": filter(lambda p: p.requires_grad, params_decay), "weight_decay": 0.01},
-            {"params": filter(lambda p: p.requires_grad, params_no_decay), "weight_decay": 0}
-            # LayerNorm no Weight Decay
-        ], lr=lr)
-    else:
-        raise NotImplementedError
-    return opt
-
-
 def build_optimizer(optimizer_cfg, model, world_size, freeze_compressor=False):
 
     lr = optimizer_cfg['BASE_LR'] * optimizer_cfg['BATCH_SIZE_PER_GPU'] * world_size

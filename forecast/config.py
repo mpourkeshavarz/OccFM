@@ -32,3 +32,8 @@ def cfg_from_yaml_file(cfg_file, config):
         config['MODEL'] = MODEL
     config['MODEL']['NAME'] = config['NAME']
     return config
+
+def cfg_from_args(cfg, args):
+
+    # to filter foreground part in dataset
+    cfg['DATA_CONFIG']['BG_ONLY'] = args.bg_only

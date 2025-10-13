@@ -118,25 +118,55 @@ class multi_step_MeanIou:
                 self.total_correct[t, j] += torch.sum((targets == c) & (outputs == c)).item()
                 self.total_positive[t, j] += torch.sum(outputs == c).item()
 
-    def _after_epoch(self):
+    def _after_epoch(self, exclude_indices=None):
+        """
+        在 epoch 结束后计算 mIoU。
+
+        Args:
+            exclude_indices (list, optional):
+                一个包含类别标签（来自原始数据集的标签）的列表。
+                这些类别将在计算最终的 mIoU 平均值时不被考虑。
+                默认为 None，即计算所有类别的 mIoU。
+        """
+        # --- 新增：参数处理 ---
+        # 为了方便处理，如果用户没有提供 exclude_indices，我们创建一个空列表。
+        if exclude_indices is None:
+            exclude_indices = []
 
         if self.dist:
             dist.all_reduce(self.total_seen)
             dist.all_reduce(self.total_correct)
             dist.all_reduce(self.total_positive)
+
         mious = []
         raw_ious_per_frame = []
+
         for t in range(self.times):
-            ious = []
+            all_class_ious = []
+            included_ious_for_mean = []
+
             for i in range(self.num_classes):
                 if self.total_seen[t, i] == 0:
-                    ious.append(1)
+                    cur_iou = 1.0
                 else:
-                    cur_iou = self.total_correct[t, i] / (self.total_seen[t, i]
-                                                          + self.total_positive[t, i]
-                                                          - self.total_correct[t, i])
-                    ious.append(cur_iou.item())
-            raw_ious_per_frame.append(ious)
-            miou = np.mean(ious)
+                    intersection = self.total_correct[t, i]
+                    union = (self.total_seen[t, i] + self.total_positive[t, i] - intersection)
+                    cur_iou_tensor = intersection / union
+                    cur_iou = cur_iou_tensor.item()
+
+                all_class_ious.append(cur_iou)
+                current_class_label = self.class_indices[i]
+
+                if current_class_label not in exclude_indices:
+                    included_ious_for_mean.append(cur_iou)
+
+            raw_ious_per_frame.append(all_class_ious)
+
+            if not included_ious_for_mean:
+                miou = 0.0
+            else:
+                miou = np.mean(included_ious_for_mean)
+
             mious.append(miou * 100)
+
         return mious, np.asarray(raw_ious_per_frame)
