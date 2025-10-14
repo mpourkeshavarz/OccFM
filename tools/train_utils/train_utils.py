@@ -108,6 +108,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                     disp_table = format_disp_dict(tb_dict)
                     live.update(Group(progress, disp_table))
 
+                dist.barrier()
+
             if is_main_process:
                 progress.update(epoch_task, advance=1)
                 progress.remove_task(step_task)
@@ -120,7 +122,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
                 eval_model = ema_model if ema_model is not None else model
 
-                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, use_amp=use_amp, rank=rank, is_main_process=is_main_process)
+                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, cond_length=cond_length,
+                                         use_amp=use_amp, rank=rank, is_main_process=is_main_process)
 
                 if is_main_process:
                     current_loss = val_avg_loss[loss_monitor if loss_monitor is not None else 'loss']

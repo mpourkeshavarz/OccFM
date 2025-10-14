@@ -20,8 +20,8 @@ def setup_occ_comparsion(label_name, frame):
     return IoU_counter, mIoU_counter
 
 
-def val_model(model, val_loader, model_func, progress, console_live, use_amp=False, eval_iou=False, eval_fps=False,
-              is_main_process=None, rank=None, test_cfm=False):
+def val_model(model, val_loader, model_func, progress, console_live, cond_length, use_amp=False, eval_iou=False,
+              eval_fps=False, is_main_process=None, rank=None, test_cfm=False):
 
     label_name = val_loader.dataset.label_name
     model.eval()
@@ -40,6 +40,12 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
             with torch.amp.autocast('cuda', enabled=use_amp, dtype=torch.bfloat16):
                 batch['eval_fps'] = eval_fps
                 batch['cfm_eval'] = test_cfm
+
+                batch['cond_length'] = cond_length
+                batch['trajectory'] = batch['trajectory'][:, :cond_length + 1]
+                batch['x_sampled'] = batch['x_sampled'][:, :cond_length + 1]
+                batch['paths'] = [x[:cond_length + 1] for x in batch['paths']]
+
                 val_loss, tb_dict, val_disp_dict = model_func(model, batch)
 
                 if eval_fps:

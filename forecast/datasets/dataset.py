@@ -10,7 +10,7 @@ class DatasetTemplate(torch_data.Dataset):
         self.valid_idx, self.all_samples, self.traj = [], [], []
 
     def __len__(self):
-        return len(self.valid_idx)
+        return len(self.valid_idx[:20])
 
     def select_valid(self, training, vae_training=False):
         self.valid_idx = []
