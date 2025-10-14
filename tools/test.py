@@ -33,6 +33,7 @@ def val_model(model, val_loader, model_func, progress, console_live, cond_length
     IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, sequence_length)
     metrics_mean_counter = DistributedDictMeanCounter(rank)
 
+    # will be excluded from results
     only_bg = val_loader.dataset.preprocessor.dynamic_object_idx if val_loader.dataset.only_bg else None
 
     with torch.no_grad():
@@ -40,11 +41,12 @@ def val_model(model, val_loader, model_func, progress, console_live, cond_length
             with torch.amp.autocast('cuda', enabled=use_amp, dtype=torch.bfloat16):
                 batch['eval_fps'] = eval_fps
                 batch['cfm_eval'] = test_cfm
-
                 batch['cond_length'] = cond_length
-                batch['trajectory'] = batch['trajectory'][:, :cond_length + 1]
-                batch['x_sampled'] = batch['x_sampled'][:, :cond_length + 1]
-                batch['paths'] = [x[:cond_length + 1] for x in batch['paths']]
+
+                if model.module.auto_regressive:
+                    batch['trajectory'] = batch['trajectory'][:, :cond_length + 1]
+                    batch['x_sampled'] = batch['x_sampled'][:, :cond_length + 1]
+                    batch['paths'] = [x[:cond_length + 1] for x in batch['paths']]
 
                 val_loss, tb_dict, val_disp_dict = model_func(model, batch)
 

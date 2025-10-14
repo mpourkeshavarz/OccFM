@@ -159,9 +159,10 @@ if __name__ == '__main__':
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
 
+        #TODO: calculate cond length in val & train
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
                                  test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
-                                 is_main_process=is_main_process)
+                                 is_main_process=is_main_process, cond_length=4)
 
         if is_main_process:
             show_eval(val_avg_loss, console)

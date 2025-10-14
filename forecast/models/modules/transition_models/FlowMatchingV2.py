@@ -92,8 +92,10 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
 
         self.traj_length = trajectory_length
         self.traj_fourier_freq = traj_fourier_freq
+
+        # TODO: rename trajectory length to seq length
         self.traj_encoder = nn.Sequential(
-            nn.Linear(trajectory_length * self.traj_fourier_freq * 4, time_embed_dim),
+            nn.Linear(6 * self.traj_fourier_freq * 4, time_embed_dim),
             nn.SiLU(),
             nn.Linear(time_embed_dim, time_embed_dim)
         )
