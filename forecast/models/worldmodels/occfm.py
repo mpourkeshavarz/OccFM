@@ -10,11 +10,14 @@ from forecast.utils.common_utils import merge_dicts, cuda_timer, cpu_timer
 
 
 class OccFM(ModelTemplate):
-    def __init__(self, model_cfg, loss_cfg, **kwargs):
+    def __init__(self, model_cfg, loss_cfg, other_cfg, **kwargs):
         super().__init__(model_cfg=merge_dicts(model_cfg))
 
-        skip_list = self.compressor_topology if kwargs.get('cache_mode', None) is not None else []
+        skip_list = self.compressor_topology if other_cfg.get('cache_mode', None) is not None else []
         self.module_list = self.build_model(self.world_model_topology, skip_list)
+        self.auto_regressive = other_cfg.get('auto_reg', False)
+        self.teach_forcing = other_cfg.get('teach_force', True)
+
         self.uncond_p = loss_cfg['UNCOND_P']
         self.rescale_factor = loss_cfg['RESCALE_FACTOR']
 
@@ -47,7 +50,11 @@ class OccFM(ModelTemplate):
 
         future_seq = batch_dict['predicted_latent'][:, seq_length:, ...]
         target = future_clip - noise_z0
-        return future_seq, target
+
+        # assume predicted velocity here is avg speed field
+        future_predict = noised_future + future_seq * (1 - t) if not self.teach_forcing and self.training else None
+
+        return future_seq, target, future_predict
 
     def sample(self, batch_dict, batch_size):
         """
@@ -130,16 +137,17 @@ class OccFM(ModelTemplate):
         batch_size = len(batch_dict['paths'])
 
         x_sampled = self.rescale_factor * x_sampled
-        condition_clip, future_clip = torch.chunk(x_sampled, 2, dim=1)
-
+        condition_clip, future_clip = torch.split(x_sampled, [batch_dict['cond_length'],
+                                                              int(x_sampled.shape[1])-batch_dict['cond_length']], dim=1)
         if batch_dict.get('cfm_eval', False):
             output, time = self.cfm_eval(future_clip, condition_clip, batch_dict, batch_size)
             loss, tb_dict, disp_dict = output
             disp_dict["time"] = time
 
         else:
-            future_seq, target = self.training_step(condition_clip, future_clip, batch_size, batch_dict)
+            future_seq, target, mean_velo_predict = self.training_step(condition_clip, future_clip, batch_size, batch_dict)
             loss, tb_dict, disp_dict = self.get_training_loss(future_seq, target)
+            disp_dict['mean_velo_predict'] = mean_velo_predict
 
         return loss, tb_dict, disp_dict
 

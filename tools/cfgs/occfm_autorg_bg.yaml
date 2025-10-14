@@ -1,17 +1,20 @@
 NAME: OccFM
 
-CACHE_MODE: True
+CACHE_MODE: True # Skip the VAE structure
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
+AUTO_REG: True
+TEACH_FORCE: False
 
 DATA_CONFIG:
     _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
-    PICKLE_PATH: {'train': './data/nusc_latent_vae/x16/nus_sem_occ_training.pkl',
-                  'test': './data/nusc_latent_vae/x16/nus_sem_occ_validation.pkl'}
-    SEQUENCE_LENGTH: 6
-    HIST_LAST: 4
 
+    PICKLE_PATH: {'train': './data/nusc_latent_vae/only_bg/fg_only_c16_training.pkl',
+                  'test': './data/nusc_latent_vae/only_bg/fg_only_c16_validation.pkl'}
+    SEQUENCE_LENGTH: 3
+    HIST_LAST: 4
     SEM_MODE: True
+
 
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
@@ -19,6 +22,8 @@ COMPRESSOR_CONFIG:
 
 TRANSITION_MODEL_CONFIG:
     _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
+    TRANSITION_MODEL:
+      TRAJECTORY_LENGTH: 5
 
 PLANNER_CONFIG:
     NAME: EmptyPlanner

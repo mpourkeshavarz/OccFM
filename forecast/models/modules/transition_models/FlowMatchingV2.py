@@ -88,7 +88,7 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
         )
 
         self.pos_embed = nn.Parameter(torch.zeros(1, self.input_size[0] * self.input_size[1], model_channels), requires_grad=False)
-        self.temp_embed = nn.Parameter(torch.zeros(1, 12, model_channels), requires_grad=False)
+        self.temp_embed = nn.Parameter(torch.zeros(1, trajectory_length, model_channels), requires_grad=False)
 
         self.traj_length = trajectory_length
         self.traj_fourier_freq = traj_fourier_freq
@@ -134,6 +134,7 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
 
 
         # init 2+1D embedding
+        seq_length_total = x.shape[1]
         x = rearrange(x, 'b f c h w -> b c f h w')
         time_rel_pos_bias = self.time_rel_pos_bias(x.shape[2], device=x.device)
 
@@ -154,7 +155,7 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
             emb = traj_feat + emb
 
         h = []
-        timestep_spatial = repeat(emb, 'n d -> (n c) d', c=self.temp_embed.shape[1])
+        timestep_spatial = repeat(emb, 'n d -> (n c) d', c=seq_length_total)
         temp_repeat_time = self.pos_embed.shape[1]
         height_img = self.input_size[0]
 

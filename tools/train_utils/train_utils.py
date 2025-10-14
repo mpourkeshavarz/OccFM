@@ -13,7 +13,61 @@ from tools.common_utils.display_utils import format_disp_dict
 import torch.distributed as dist
 from rich.console import Console
 import os
+import numpy as np
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+def single_loop_training(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler, max_grad,
+                         cond_length=None, ema_model=None):
+
+    batch['cond_length'] = cond_length
+    with torch.amp.autocast('cuda', enabled=use_amp):
+        loss, tb_dict, disp_dict = model_func(model, batch)
+
+    scaler.scale(loss).backward()
+    scaler.unscale_(optimizer)
+    clip_grad_norm_(model.parameters(), max_grad)
+    scaler.step(optimizer)
+    scaler.update()
+    lr_scheduler.step()
+
+    if ema_model is not None:
+        ema_model.update_parameters(model.module)
+
+    return tb_dict
+
+def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler, max_grad,
+                             cond_length, ema_model=None):
+
+    forecast_length = batch['x_sampled'].shape[1] - cond_length
+
+    run_time_forecasted = []
+    for forecast_idx in range(forecast_length):
+        temp_data_dict = {'paths': [x[forecast_idx:forecast_idx+cond_length + 1] for x in batch['paths']],
+                          'trajectory': batch['trajectory'][:, forecast_idx:forecast_idx+cond_length + 1],
+                          'x_sampled': batch['x_sampled'][:, forecast_idx:forecast_idx+cond_length + 1],
+                          'cond_length': cond_length}
+
+        if len(run_time_forecasted) > 0:
+            temp_data_dict['x_sampled'][:, -1-len(run_time_forecasted):-1] = np.concat(run_time_forecasted, axis=1)
+
+        with torch.amp.autocast('cuda', enabled=use_amp):
+            loss, tb_dict, disp_dict = model_func(model, temp_data_dict)
+
+        if disp_dict.get('mean_velo_predict', None) is not None:
+            run_time_pred = disp_dict['mean_velo_predict'].detach().cpu().numpy()
+            run_time_forecasted.append(run_time_pred)
+
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        clip_grad_norm_(model.parameters(), max_grad)
+        scaler.step(optimizer)
+        scaler.update()
+        lr_scheduler.step()
+
+        if ema_model is not None:
+            ema_model.update_parameters(model.module)
+
+    return tb_dict
 
 
 def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_epoch, optim_cfg,
@@ -21,6 +75,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None):
     # DDP after load parameters
     # encoder/decoder param also include but no grad
+    model_update_func = auto_regressive_training if model.auto_regressive else single_loop_training
     model = DDP(model, device_ids=[rank])
 
     train_loader.sampler.set_epoch(start_epoch)
@@ -43,18 +98,9 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 model.train()
                 optimizer.zero_grad()
 
-                with torch.amp.autocast('cuda', enabled=use_amp):
-                    loss, tb_dict, disp_dict = model_func(model, batch)
-
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                clip_grad_norm_(model.parameters(), optim_cfg.GRAD_NORM_CLIP)
-                scaler.step(optimizer)
-                scaler.update()
-                lr_scheduler.step()
-
-                if ema_model is not None:
-                    ema_model.update_parameters(model.module)
+                cond_length = batch['x_sampled'].shape[1] - train_loader.dataset.sequence_length
+                tb_dict = model_update_func(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler,
+                                            optim_cfg.GRAD_NORM_CLIP, cond_length=cond_length, ema_model=ema_model)
 
                 if is_main_process:
                     progress.update(step_task, advance=1)

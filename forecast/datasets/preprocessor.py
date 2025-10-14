@@ -9,7 +9,7 @@ class Preprocessor(object):
         self.cluster_tolerance = preprocessor_config['cluster_tolerance']
         self.driveable_area = preprocessor_config['drive_area_index']
         self.cate_num = preprocessor_config['cate_num']
-        self.non_vehicle_index = preprocessor_config['non_vehicle_index']
+        self.non_vehicle_index = preprocessor_config['fg_non_vehicle_index']
 
         self.dynamic_object_idx = preprocessor_config['dynamic_objects']
         self.background_object_idx = [x for x in range(self.cate_num) if x not in self.dynamic_object_idx]

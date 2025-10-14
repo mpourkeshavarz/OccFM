@@ -19,7 +19,7 @@ class NuScenesDataset(DatasetTemplate):
 
         dataset_cfg.preprocessor['dynamic_objects'] = [dataset_cfg['label_name'].index(x) for x in dataset_cfg['dynamic_classes']]
         dataset_cfg.preprocessor['drive_area_index'] = 11
-        dataset_cfg.preprocessor['non_vehicle_index'] = [2, 6, 7]
+        dataset_cfg.preprocessor['fg_non_vehicle_index'] = [2, 6, 7]
         dataset_cfg.preprocessor['cate_num'] = len(self.label_name)
 
         preprocess_step = getattr(dataset_cfg, 'preprocess_step', [])
@@ -82,13 +82,7 @@ class NuScenesDataset(DatasetTemplate):
             'trajectory': np.concat(self.traj[sample_idx: sample_idx + self.safe_length])
         }
         if self.cache_mode:
-            x_sampled = np.concat(self.x_sampled[sample_idx: sample_idx + self.safe_length])
-
-            repeat = self.sequence_length - self.hist_last
-            if repeat > 0:
-                x_sampled[:repeat] = 0
-                data_dict['trajectory'][:repeat] = 0
-            data_dict['x_sampled'] = x_sampled
+            data_dict['x_sampled'] = np.concat(self.x_sampled[sample_idx: sample_idx + self.safe_length])
         else:
             paths = data_dict['paths']
             data_dict['semantic_occ'] = [np.load(path)['semantics'] for path in paths] if len(paths) > 1 else np.load(paths[0])['semantics']

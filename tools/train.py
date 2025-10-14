@@ -102,7 +102,7 @@ if __name__ == '__main__':
     torch.cuda.set_device(rank)
     is_main_process = (rank == 0)
 
-    model = build_network(model_cfg=cfg.MODEL, loss_cfg=cfg.LOSS, cache_mode=cfg.CACHE_MODE).to(rank)
+    model = build_network(model_cfg=cfg.MODEL, loss_cfg=cfg.LOSS, other_cfg=cfg.OTHER_MODEL_CFG).to(rank)
     ema_model = build_ema(model).to(rank) if args.use_ema else None
 
     train_set, train_loader = build_dataloader(

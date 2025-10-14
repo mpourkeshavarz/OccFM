@@ -29,8 +29,23 @@ def cfg_from_yaml_file(cfg_file, config):
         if model_module_name in config.keys():
             MODEL[model_module_name] = copy.deepcopy(config[model_module_name])
             del config[model_module_name]
+
+        # rewrite
+        left_key = [x for x in MODEL[model_module_name].keys() if x not in [model_module_name, 'MODEL', '_BASE_CONFIG_']]
+
+        if hasattr(MODEL[model_module_name], 'MODEL'):
+            for rewrite_key in left_key:
+                update_config = MODEL[model_module_name][rewrite_key]
+                if isinstance(update_config, dict): # update some deeper dir in base config
+                    MODEL[model_module_name]['MODEL'][rewrite_key].update(update_config)
+                else: # updated config right in first layer of base config
+                    MODEL[model_module_name]['MODEL'][rewrite_key] = MODEL[model_module_name][rewrite_key]
+
         config['MODEL'] = MODEL
     config['MODEL']['NAME'] = config['NAME']
+
+    config['OTHER_MODEL_CFG'] = {'auto_reg': config.AUTO_REG, 'cache_mode': getattr(config, 'CACHE_MODE', None),
+                                 'teach_force': getattr(config, 'TEACH_FORCE', True)}
     return config
 
 def cfg_from_args(cfg, args):

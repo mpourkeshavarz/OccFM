@@ -5,10 +5,10 @@ from .worldmodels import build_wm
 from .compressors import build_compressor
 
 
-def build_network(model_cfg, loss_cfg=None, cache_mode=None):
+def build_network(model_cfg, loss_cfg=None, other_cfg=None):
 
     if 'TRANSITION_MODEL_CONFIG' in model_cfg.keys():
-        model = build_wm(model_cfg=model_cfg, loss_cfg=loss_cfg, cache_mode=cache_mode)
+        model = build_wm(model_cfg=model_cfg, loss_cfg=loss_cfg, other_cfg=other_cfg)
     else:
         model = build_compressor(model_cfg=model_cfg, loss_cfg=loss_cfg)
     return model

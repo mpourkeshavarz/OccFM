@@ -14,7 +14,7 @@ class DatasetTemplate(torch_data.Dataset):
 
     def select_valid(self, training, vae_training=False):
         self.valid_idx = []
-        self.safe_length = self.sequence_length * 2 if not vae_training else self.sequence_length
+        self.safe_length = self.sequence_length + getattr(self, 'hist_last', self.sequence_length) if not vae_training else self.sequence_length
         scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
         for idx, scene in enumerate(scenes_list):
             sub_seq = scenes_list[idx: idx + self.safe_length]
