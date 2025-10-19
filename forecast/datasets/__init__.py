@@ -14,9 +14,9 @@ __all__ = {
 }
 
 
-def build_dataloader(dataset_cfg, batch_size, num_workers, cache_mode, training=True, seed=None, rank=None, world_size=None):
+def build_dataloader(dataset_cfg, batch_size, num_workers, gen_training, training=True, seed=None, rank=None, world_size=None):
     dataset = __all__[dataset_cfg.DATASET](
-        dataset_cfg=common_utils.lowercase_keys(dataset_cfg), batch_size=batch_size, training=training, cache_mode=cache_mode
+        dataset_cfg=common_utils.lowercase_keys(dataset_cfg), batch_size=batch_size, training=training, gen_training=gen_training
     )
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=training, drop_last=True)
 

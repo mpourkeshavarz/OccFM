@@ -11,8 +11,9 @@ from forecast.models.modules.base.postion_embed import (RelativePositionBias, ge
                                                         get_1d_sincos_temp_embed, get_fourier_embeds_from_coordinates)
 
 class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
-    def __init__(self, in_channels=3, out_channels=96, traj_fourier_freq=8, model_channels=None, channel_multi=None,
-                 input_size=None, trajectory_length=None, init_kernel_size=None, init_3d_conv_channels=None, attn_dim=None,
+    def __init__(self, in_channels=3, out_channels=96, traj_fourier_freq=8, trajectory_length=4, model_channels=None, channel_multi=None,
+                 input_size=None, seq_length=None, init_kernel_size=None,
+                 init_3d_conv_channels=None, attn_dim=None,
                  temporal_attn_head=None, spatial_attn_head=None, **kwargs):
         super().__init__()
 
@@ -95,7 +96,7 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
 
         # TODO: rename trajectory length to seq length
         self.traj_encoder = nn.Sequential(
-            nn.Linear(6 * self.traj_fourier_freq * 4, time_embed_dim),
+            nn.Linear(self.traj_length * self.traj_fourier_freq * 4, time_embed_dim),
             nn.SiLU(),
             nn.Linear(time_embed_dim, time_embed_dim)
         )

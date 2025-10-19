@@ -33,7 +33,7 @@ class DistributedListBuffer:
 
 class DistributedDictMeanCounter:
     """
-    并行统计一组标量，支持 DDP 全局平均。
+    Parallelly get stat info from multi GPU。
     """
 
     def __init__(self, device=None):

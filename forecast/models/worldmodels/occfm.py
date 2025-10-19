@@ -13,7 +13,7 @@ class OccFM(ModelTemplate):
     def __init__(self, model_cfg, loss_cfg, other_cfg, **kwargs):
         super().__init__(model_cfg=merge_dicts(model_cfg))
 
-        skip_list = self.compressor_topology if other_cfg.get('cache_mode', None) is not None else []
+        skip_list = self.compressor_topology if other_cfg.get('gen_training', None) is not None else []
         self.module_list = self.build_model(self.world_model_topology, skip_list)
         self.auto_regressive = other_cfg.get('auto_reg', False)
         self.teach_forcing = other_cfg.get('teach_force', True)
@@ -77,7 +77,8 @@ class OccFM(ModelTemplate):
             t = torch.tensor([t_curr * self.time_scalar]).unsqueeze(0).repeat(input.shape[0], 1).cuda().reshape(1, -1)
 
             # classifier-free guidance
-            cond_seq, future_seq = torch.chunk(input, 2, dim=1)
+            cond_seq, future_seq = torch.split(input, [batch_dict['cond_length'],
+                                                       input.shape[1]-batch_dict['cond_length']], dim=1)
             uncond_seq = torch.concat((torch.zeros_like(cond_seq), future_seq), dim=1)
             cfg_input = torch.concat((uncond_seq, input), dim=0)
             t = torch.cat([t] * 2, dim=1).reshape(-1, )
@@ -91,15 +92,18 @@ class OccFM(ModelTemplate):
 
             uncond_v, cond_v = torch.chunk(v, 2, dim=0)
             v = uncond_v + self.unconditional_guidance_scale * (cond_v - uncond_v)
-            # only v for last 6 frames are useful
-            _, v_future = torch.chunk(v, 2, 1)
+            # only v for forecasted frames are useful
+            _, v_future = torch.split(v, [batch_dict['cond_length'],
+                                                       input.shape[1]-batch_dict['cond_length']], 1)
 
             # The noised future
-            _, future_frames_with_cfg = torch.chunk(cfg_input, 2, 1)
+            _, future_frames_with_cfg = torch.split(cfg_input, [batch_dict['cond_length'],
+                                                       input.shape[1]-batch_dict['cond_length']], 1)
             denoised_future_frames = future_frames_with_cfg.clone()[batch_size:, ...] + step * v_future
             input = torch.concat((cond_seq, denoised_future_frames), dim=1)
 
-        _, output = torch.chunk(input, 2, dim=1)
+        _, output = torch.split(input, [batch_dict['cond_length'],
+                                                       input.shape[1]-batch_dict['cond_length']], dim=1)
         output /= self.rescale_factor
 
         return output

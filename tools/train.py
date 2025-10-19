@@ -107,12 +107,15 @@ if __name__ == '__main__':
 
     train_set, train_loader = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,
-        cache_mode=cfg.CACHE_MODE, rank=rank, world_size=world_size
+        gen_training=cfg.GEN_TRAINING, rank=rank, world_size=world_size
     )
+
+    if args.eval_mode and hasattr(cfg.DATA_CONFIG, 'IOU_EVAL_LENGTH'):
+        cfg.DATA_CONFIG.FORECAST_LENGTH = cfg.DATA_CONFIG.ROLL_OUT_LENGTH
 
     val_set, val_loader = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,
-        cache_mode=cfg.CACHE_MODE, training=False, rank=rank, world_size=world_size
+        gen_training=cfg.GEN_TRAINING, training=False, rank=rank, world_size=world_size
     )
 
     optimizer = build_optimizer(cfg.OPTIMIZATION, model, world_size)
@@ -159,10 +162,9 @@ if __name__ == '__main__':
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
 
-        #TODO: calculate cond length in val & train
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
                                  test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
-                                 is_main_process=is_main_process, cond_length=4)
+                                 is_main_process=is_main_process)
 
         if is_main_process:
             show_eval(val_avg_loss, console)

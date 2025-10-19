@@ -44,7 +44,7 @@ def cfg_from_yaml_file(cfg_file, config):
         config['MODEL'] = MODEL
     config['MODEL']['NAME'] = config['NAME']
 
-    config['OTHER_MODEL_CFG'] = {'auto_reg': getattr(config, 'AUTO_REG', False), 'cache_mode': getattr(config, 'CACHE_MODE', None),
+    config['OTHER_MODEL_CFG'] = {'auto_reg': getattr(config, 'AUTO_REG', False), 'gen_training': getattr(config, 'GEN_TRAINING', None),
                                  'teach_force': getattr(config, 'TEACH_FORCE', True)}
     return config
 

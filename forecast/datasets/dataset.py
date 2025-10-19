@@ -2,19 +2,24 @@ import numpy as np
 import torch.utils.data as torch_data
 
 class DatasetTemplate(torch_data.Dataset):
-    def __init__(self, dataset_cfg, training):
+    def __init__(self, dataset_cfg, training, gen_training):
         super().__init__()
         self.training = training
-        self.sequence_length = dataset_cfg.sequence_length
+        self.gen_training = gen_training
+
+        if self.gen_training:
+            self.forecast_length = dataset_cfg.forecast_length
+            self.hist_length = dataset_cfg.hist_length
+
         self.win_size = dataset_cfg.get('win_size', 1)
         self.valid_idx, self.all_samples, self.traj = [], [], []
 
     def __len__(self):
-        return len(self.valid_idx[:20])
+        return len(self.valid_idx)
 
-    def select_valid(self, training, vae_training=False):
+    def select_valid(self, training):
         self.valid_idx = []
-        self.safe_length = self.sequence_length + getattr(self, 'hist_last', self.sequence_length) if not vae_training else self.sequence_length
+        self.safe_length = self.forecast_length + self.hist_length if self.gen_training else getattr(self, 'sequence_length', 1)
         scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
         for idx, scene in enumerate(scenes_list):
             sub_seq = scenes_list[idx: idx + self.safe_length]

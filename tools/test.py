@@ -20,17 +20,21 @@ def setup_occ_comparsion(label_name, frame):
     return IoU_counter, mIoU_counter
 
 
-def val_model(model, val_loader, model_func, progress, console_live, cond_length, use_amp=False, eval_iou=False,
+def val_model(model, val_loader, model_func, progress, console_live, use_amp=False, eval_iou=False,
               eval_fps=False, is_main_process=None, rank=None, test_cfm=False):
 
     label_name = val_loader.dataset.label_name
+    cond_length = val_loader.dataset.hist_length
+    roll_out_step = val_loader.dataset.roll_out_step
+    iter_num = val_loader.dataset.forecast_length // roll_out_step # should be number rollout now
+
     model.eval()
 
     if is_main_process:
         val_task = progress.add_task(description="Eval samples", total=len(val_loader))
 
-    sequence_length = val_loader.dataset.sequence_length
-    IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, sequence_length)
+    iou_eval_length = val_loader.dataset.iou_eval_length
+    IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, iou_eval_length)
     metrics_mean_counter = DistributedDictMeanCounter(rank)
 
     # will be excluded from results
@@ -43,27 +47,45 @@ def val_model(model, val_loader, model_func, progress, console_live, cond_length
                 batch['cfm_eval'] = test_cfm
                 batch['cond_length'] = cond_length
 
-                if model.module.auto_regressive:
-                    batch['trajectory'] = batch['trajectory'][:, :cond_length + 1]
-                    batch['x_sampled'] = batch['x_sampled'][:, :cond_length + 1]
-                    batch['paths'] = [x[:cond_length + 1] for x in batch['paths']]
+                all_trajectorys = batch['trajectory']
+                all_x_samples_gt = batch['x_sampled']
+                all_paths = batch['paths']
 
-                val_loss, tb_dict, val_disp_dict = model_func(model, batch)
+                batch['x_sampled'] = all_x_samples_gt[:, :cond_length + roll_out_step]
 
-                if eval_fps:
-                    tb_dict["time"] = val_disp_dict["time"]
+                pred_occs = []
+                for iter_idx in range(iter_num):
+                    iter_idx *= roll_out_step
+                    # always ground truth trajectory and gt path
+                    batch['trajectory'] = all_trajectorys[:, iter_idx:iter_idx + cond_length + roll_out_step]
+                    batch['paths'] = [x[iter_idx:iter_idx + cond_length + roll_out_step] for x in all_paths]
 
-                metrics_mean_counter.update(tb_dict)
+                    val_loss, tb_dict, val_disp_dict = model_func(model, batch)
+
+                    if eval_fps:
+                        tb_dict["time"] = val_disp_dict["time"]
+
+                    metrics_mean_counter.update(tb_dict)
+                    pred_occs.append(val_disp_dict['pred_occ'].detach().cpu())
+
+                    if model.module.teach_forcing:
+                        batch['x_sampled'] = all_x_samples_gt[:, iter_idx:iter_idx + cond_length + roll_out_step]
+                    else:
+                        # replace last frame of condition with forecasted one, padding with 0.
+                        ori_cond = batch['x_sampled'][:, roll_out_step:cond_length].detach()
+                        forecasted_frame = val_disp_dict['future_seq']
+                        batch['x_sampled'] = torch.cat((ori_cond, forecasted_frame,
+                                                        torch.zeros_like(forecasted_frame)), dim=1)
 
                 if eval_iou:
                     if 'gt_occ' not in val_disp_dict:
-                        all_seq_gtocc_path = batch['paths'][0][sequence_length:]
+                        all_seq_gtocc_path = all_paths[0][cond_length:cond_length + iou_eval_length]
                         gt_occ = torch.as_tensor(np.stack([np.load(x[0])['semantics'] if isinstance(x, list)
                                                            else np.load(x)['semantics'] for x in all_seq_gtocc_path])).unsqueeze(0)
                     else:
                         gt_occ = val_disp_dict['gt_occ'].detach().cpu()
 
-                    pred_occ = val_disp_dict['pred_occ'].detach().cpu()
+                    pred_occ = torch.concat(pred_occs, dim=1)
 
                     if val_loader.dataset.sem_mode:
                         mIoU_counter._after_step(pred_occ, gt_occ)

@@ -16,7 +16,10 @@ def build_network(model_cfg, loss_cfg=None, other_cfg=None):
 def load_data_to_gpu(batch_dict, device=None):
     for key, val in batch_dict.items():
         if key in ['trajectory', 'semantic_occ', 'x_sampled']:
-            batch_dict[key] = torch.from_numpy(val).cuda()
+            if isinstance(val, torch.Tensor):
+                batch_dict[key] = val.cuda(device=device)
+            else:
+                batch_dict[key] = torch.from_numpy(val).cuda(device=device)
         else:
             continue
     return batch_dict

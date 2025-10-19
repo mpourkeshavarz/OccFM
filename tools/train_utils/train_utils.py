@@ -98,9 +98,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 model.train()
                 optimizer.zero_grad()
 
-                cond_length = batch['x_sampled'].shape[1] - train_loader.dataset.sequence_length
                 tb_dict = model_update_func(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler,
-                                            optim_cfg.GRAD_NORM_CLIP, cond_length=cond_length, ema_model=ema_model)
+                                            optim_cfg.GRAD_NORM_CLIP, cond_length=train_loader.dataset.hist_length, ema_model=ema_model)
 
                 if is_main_process:
                     progress.update(step_task, advance=1)
@@ -122,7 +121,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
                 eval_model = ema_model if ema_model is not None else model
 
-                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, cond_length=cond_length,
+                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live,
                                          use_amp=use_amp, rank=rank, is_main_process=is_main_process)
 
                 if is_main_process:

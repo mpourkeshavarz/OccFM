@@ -7,15 +7,13 @@ from nuscenes.nuscenes import NuScenes
 from .preprocessor import Preprocessor
 
 class NuScenesDataset(DatasetTemplate):
-    def __init__(self, dataset_cfg, batch_size, training, cache_mode):
-        super().__init__(dataset_cfg, training)
+    def __init__(self, dataset_cfg, batch_size, training, gen_training):
+        super().__init__(dataset_cfg, training, gen_training)
 
-        self.cache_mode = cache_mode
         self.sem_mode = dataset_cfg.sem_mode
         self.label_name = dataset_cfg.label_name
-        self.sequence_length = dataset_cfg.sequence_length
-        self.x_sampled = None
-        self.hist_last = dataset_cfg.get('hist_last', 6)
+        self.iou_eval_length = dataset_cfg.iou_eval_length
+        self.roll_out_step = dataset_cfg.roll_out_step
 
         dataset_cfg.preprocessor['dynamic_objects'] = [dataset_cfg['label_name'].index(x) for x in dataset_cfg['dynamic_classes']]
         dataset_cfg.preprocessor['drive_area_index'] = 11
@@ -31,29 +29,8 @@ class NuScenesDataset(DatasetTemplate):
         with open(pickle_path, 'rb') as f:
             self.infos = pickle.load(f)['infos']
 
-        if not cache_mode: # used to control dataset in VAE or CFM
-            self.nuSc_context_manager = NuScenes(version='v1.0-trainval', dataroot=dataset_cfg['data_path'])
+        if gen_training: # used to control dataset in VAE or CFM
 
-            using_scenes = list(self.infos.keys())
-            init_pos = 0
-            for scene in self.nuSc_context_manager.scene:
-                if scene["name"] not in using_scenes:
-                    continue
-
-                all_token_with_order = [self.infos[scene["name"]][i]['token'] for i in range(len(self.infos[scene["name"]]))]
-                path = [dataset_cfg['data_path'] + f'/gts/{scene["name"]}/' + x + '/labels.npz' for x in all_token_with_order]
-                self.all_samples.extend(path)
-                init_pos += len(path)
-
-                info_seq = self.infos[scene["name"]]
-                for token, sample in zip(all_token_with_order, info_seq):
-                    self.traj.append(sample['gt_ego_fut_trajs'][0])
-            # TODO: make it support non-cache cfm training
-            self.select_valid(training, vae_training=True)
-
-            self.only_bg = 'filter_fg' in preprocess_step # VAE should have this step
-
-        else:
             assert dataset_cfg.get('pickle_path', None) is not None, "Should provide cached pickles"
 
             path = dataset_cfg['pickle_path']['train' if training else 'test']
@@ -74,6 +51,29 @@ class NuScenesDataset(DatasetTemplate):
             self.select_valid(training) # cache mode only during cfm training
             self.only_bg = 'fg_only' in path
 
+        else:
+            self.nuSc_context_manager = NuScenes(version='v1.0-trainval', dataroot=dataset_cfg['data_path'])
+
+            using_scenes = list(self.infos.keys())
+            init_pos = 0
+            for scene in self.nuSc_context_manager.scene:
+                if scene["name"] not in using_scenes:
+                    continue
+
+                all_token_with_order = [self.infos[scene["name"]][i]['token'] for i in
+                                        range(len(self.infos[scene["name"]]))]
+                path = [dataset_cfg['data_path'] + f'/gts/{scene["name"]}/' + x + '/labels.npz' for x in
+                        all_token_with_order]
+                self.all_samples.extend(path)
+                init_pos += len(path)
+
+                info_seq = self.infos[scene["name"]]
+                for token, sample in zip(all_token_with_order, info_seq):
+                    self.traj.append(sample['gt_ego_fut_trajs'][0])
+            self.select_valid(training)
+
+            self.only_bg = 'filter_fg' in preprocess_step  # VAE should have this step
+
     def __getitem__(self, idx):
 
         sample_idx = self.valid_idx[idx]
@@ -81,7 +81,7 @@ class NuScenesDataset(DatasetTemplate):
             'paths': self.all_samples[sample_idx: sample_idx + self.safe_length],
             'trajectory': np.concat(self.traj[sample_idx: sample_idx + self.safe_length])
         }
-        if self.cache_mode:
+        if self.gen_training:
             data_dict['x_sampled'] = np.concat(self.x_sampled[sample_idx: sample_idx + self.safe_length])
         else:
             paths = data_dict['paths']
