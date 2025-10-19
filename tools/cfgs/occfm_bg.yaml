@@ -1,6 +1,6 @@
 NAME: OccFM
 
-CACHE_MODE: True
+GEN_TRAINING: True # Skip the VAE structure
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
 

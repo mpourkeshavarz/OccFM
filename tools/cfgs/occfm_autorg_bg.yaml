@@ -1,19 +1,23 @@
 NAME: OccFM
 
-CACHE_MODE: True # Skip the VAE structure
+GEN_TRAINING: True # Skip the VAE structure
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
 AUTO_REG: True
-TEACH_FORCE: False
+TEACH_FORCE: True
 
 DATA_CONFIG:
     _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
 
     PICKLE_PATH: {'train': './data/nusc_latent_vae/only_bg/fg_only_c16_training.pkl',
                   'test': './data/nusc_latent_vae/only_bg/fg_only_c16_validation.pkl'}
-    SEQUENCE_LENGTH: 3
-    HIST_LAST: 4
     SEM_MODE: True
+    HIST_LENGTH: 4
+    FORECAST_LENGTH: 3 # repeat 3 times autoregressively
+
+    IOU_EVAL_LENGTH: 6 # total length to eval miou
+    ROLL_OUT_LENGTH: 6
+    ROLL_OUT_STEP: 1
 
 
 COMPRESSOR_CONFIG:

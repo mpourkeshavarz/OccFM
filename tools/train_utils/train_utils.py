@@ -48,7 +48,7 @@ def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimize
                           'cond_length': cond_length}
 
         if len(run_time_forecasted) > 0:
-            temp_data_dict['x_sampled'][:, -1-len(run_time_forecasted):-1] = np.concat(run_time_forecasted, axis=1)
+            temp_data_dict['x_sampled'][:, -1-len(run_time_forecasted):-1] = np.concatenate(run_time_forecasted, axis=1)
 
         with torch.amp.autocast('cuda', enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, temp_data_dict)
