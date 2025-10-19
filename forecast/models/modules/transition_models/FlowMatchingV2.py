@@ -89,7 +89,7 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
         )
 
         self.pos_embed = nn.Parameter(torch.zeros(1, self.input_size[0] * self.input_size[1], model_channels), requires_grad=False)
-        self.temp_embed = nn.Parameter(torch.zeros(1, trajectory_length, model_channels), requires_grad=False)
+        self.temp_embed = nn.Parameter(torch.zeros(1, seq_length, model_channels), requires_grad=False)
 
         self.traj_length = trajectory_length
         self.traj_fourier_freq = traj_fourier_freq

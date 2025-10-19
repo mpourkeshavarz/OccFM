@@ -66,7 +66,9 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         tb_dict["time"] = val_disp_dict["time"]
 
                     metrics_mean_counter.update(tb_dict)
-                    pred_occs.append(val_disp_dict['pred_occ'].detach().cpu())
+
+                    if eval_iou:
+                        pred_occs.append(val_disp_dict['pred_occ'].detach().cpu())
 
                     if model.module.teach_forcing:
                         batch['x_sampled'] = all_x_samples_gt[:, iter_idx:iter_idx + cond_length + roll_out_step]

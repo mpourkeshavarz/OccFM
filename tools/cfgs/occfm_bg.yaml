@@ -9,8 +9,12 @@ DATA_CONFIG:
     PICKLE_PATH: {'train': './data/nusc_latent_vae/only_bg/fg_only_c16_training.pkl',
                   'test': './data/nusc_latent_vae/only_bg/fg_only_c16_validation.pkl'}
     SEM_MODE: True
-    HIST_LAST: 4
+    HIST_LENGTH: 4
     FORECAST_LENGTH: 6
+
+    IOU_EVAL_LENGTH: 6 # total length to eval miou
+    ROLL_OUT_LENGTH: 6 # total length of eval
+    ROLL_OUT_STEP: 6
 
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
@@ -19,8 +23,8 @@ COMPRESSOR_CONFIG:
 TRANSITION_MODEL_CONFIG:
     _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
     TRANSITION_MODEL:
-      SEQ_LENGTH: 10 # The overall length of sequence, should be sum of hist_last & seq_length
       TRAJECTORY_LENGTH: 4 # The length of trajectory used for training,
+      SEQ_LENGTH: 10 # The overall length of sequence, should be sum of hist_last & seq_length
 
 PLANNER_CONFIG:
     NAME: EmptyPlanner

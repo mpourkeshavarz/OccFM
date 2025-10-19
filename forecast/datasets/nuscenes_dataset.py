@@ -79,10 +79,10 @@ class NuScenesDataset(DatasetTemplate):
         sample_idx = self.valid_idx[idx]
         data_dict = {
             'paths': self.all_samples[sample_idx: sample_idx + self.safe_length],
-            'trajectory': np.concat(self.traj[sample_idx: sample_idx + self.safe_length])
+            'trajectory': np.concatenate(self.traj[sample_idx: sample_idx + self.safe_length])
         }
         if self.gen_training:
-            data_dict['x_sampled'] = np.concat(self.x_sampled[sample_idx: sample_idx + self.safe_length])
+            data_dict['x_sampled'] = np.concatenate(self.x_sampled[sample_idx: sample_idx + self.safe_length])
         else:
             paths = data_dict['paths']
             data_dict['semantic_occ'] = [np.load(path)['semantics'] for path in paths] if len(paths) > 1 else np.load(paths[0])['semantics']
