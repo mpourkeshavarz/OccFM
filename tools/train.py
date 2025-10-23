@@ -111,7 +111,7 @@ if __name__ == '__main__':
     )
 
     if args.eval_mode and hasattr(cfg.DATA_CONFIG, 'IOU_EVAL_LENGTH'):
-        cfg.DATA_CONFIG.FORECAST_LENGTH = cfg.DATA_CONFIG.ROLL_OUT_LENGTH
+        cfg.DATA_CONFIG.FORECAST_LENGTH = cfg.DATA_CONFIG.ROLL_OUT_STEP
 
     val_set, val_loader = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,

@@ -29,6 +29,8 @@ def cfg_from_yaml_file(cfg_file, config):
         if model_module_name in config.keys():
             MODEL[model_module_name] = copy.deepcopy(config[model_module_name])
             del config[model_module_name]
+        else:
+            continue
 
         # rewrite
         left_key = [x for x in MODEL[model_module_name].keys() if x not in [model_module_name, 'MODEL', '_BASE_CONFIG_']]
@@ -42,6 +44,7 @@ def cfg_from_yaml_file(cfg_file, config):
                     MODEL[model_module_name]['MODEL'][rewrite_key] = MODEL[model_module_name][rewrite_key]
 
         config['MODEL'] = MODEL
+
     config['MODEL']['NAME'] = config['NAME']
 
     config['OTHER_MODEL_CFG'] = {'auto_reg': getattr(config, 'AUTO_REG', False), 'gen_training': getattr(config, 'GEN_TRAINING', None),

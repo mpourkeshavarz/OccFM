@@ -10,17 +10,21 @@ class NuScenesDataset(DatasetTemplate):
     def __init__(self, dataset_cfg, batch_size, training, gen_training):
         super().__init__(dataset_cfg, training, gen_training)
 
+        preprocess_step = getattr(dataset_cfg, 'preprocess_step', [])
+
         self.sem_mode = dataset_cfg.sem_mode
-        self.label_name = dataset_cfg.label_name
+        self.label_name = dataset_cfg.background_classes if 'filter_fg' in preprocess_step else dataset_cfg.label_name
+
         self.iou_eval_length = dataset_cfg.iou_eval_length
         self.roll_out_step = dataset_cfg.roll_out_step
 
+        # used filter_fg in vae training, which will process original occ
+        # different for waymo/nusc
         dataset_cfg.preprocessor['dynamic_objects'] = [dataset_cfg['label_name'].index(x) for x in dataset_cfg['dynamic_classes']]
         dataset_cfg.preprocessor['drive_area_index'] = 11
         dataset_cfg.preprocessor['fg_non_vehicle_index'] = [2, 6, 7]
-        dataset_cfg.preprocessor['cate_num'] = len(self.label_name)
+        dataset_cfg.preprocessor['ori_cate_num'] = len(dataset_cfg['label_name'])
 
-        preprocess_step = getattr(dataset_cfg, 'preprocess_step', [])
         self.preprocessor = Preprocessor(dataset_cfg.preprocessor, preprocess_step)
 
         pickle_path = dataset_cfg['info_path']['train' if training else 'test'][0]

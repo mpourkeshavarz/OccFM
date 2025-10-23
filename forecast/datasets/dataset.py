@@ -7,9 +7,8 @@ class DatasetTemplate(torch_data.Dataset):
         self.training = training
         self.gen_training = gen_training
 
-        if self.gen_training:
-            self.forecast_length = dataset_cfg.forecast_length
-            self.hist_length = dataset_cfg.hist_length
+        self.forecast_length = dataset_cfg.forecast_length if self.gen_training else 1
+        self.hist_length = dataset_cfg.hist_length if self.gen_training else 0
 
         self.win_size = dataset_cfg.get('win_size', 1)
         self.valid_idx, self.all_samples, self.traj = [], [], []

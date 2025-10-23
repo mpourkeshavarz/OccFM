@@ -11,7 +11,7 @@ from forecast.utils.eval_utils import multi_step_MeanIou, DistributedDictMeanCou
 
 def setup_occ_comparsion(label_name, frame):
 
-    unique_labels = np.asarray([x for x in range(17)])  # 17 stand for empty
+    unique_labels = np.asarray([x for x in range(len(label_name))])
     unique_label_str = [label_name[l] for l in unique_labels]
     IoU_counter = multi_step_MeanIou([1], -100, ['occupied'], 'vox', times=frame)
     IoU_counter.reset()
@@ -37,9 +37,6 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
     IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, iou_eval_length)
     metrics_mean_counter = DistributedDictMeanCounter(rank)
 
-    # will be excluded from results
-    only_bg = val_loader.dataset.preprocessor.dynamic_object_idx if val_loader.dataset.only_bg else None
-
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
             with torch.amp.autocast('cuda', enabled=use_amp, dtype=torch.bfloat16):
@@ -48,10 +45,12 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                 batch['cond_length'] = cond_length
 
                 all_trajectorys = batch['trajectory']
-                all_x_samples_gt = batch['x_sampled']
                 all_paths = batch['paths']
 
-                batch['x_sampled'] = all_x_samples_gt[:, :cond_length + roll_out_step]
+                input_name = 'x_sampled' if 'x_sampled' in batch.keys() else 'semantic_occ'
+                all_x_samples_gt = batch[input_name]
+
+                batch[input_name] = all_x_samples_gt[:, :cond_length + roll_out_step]
 
                 pred_occs = []
                 for iter_idx in range(iter_num):
@@ -70,14 +69,17 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                     if eval_iou:
                         pred_occs.append(val_disp_dict['pred_occ'].detach().cpu())
 
-                    if model.module.teach_forcing:
-                        batch['x_sampled'] = all_x_samples_gt[:, iter_idx:iter_idx + cond_length + roll_out_step]
-                    else:
-                        # replace last frame of condition with forecasted one, padding with 0.
-                        ori_cond = batch['x_sampled'][:, roll_out_step:cond_length].detach()
-                        forecasted_frame = val_disp_dict['future_seq']
-                        batch['x_sampled'] = torch.cat((ori_cond, forecasted_frame,
-                                                        torch.zeros_like(forecasted_frame)), dim=1)
+                    # for vae model, here the ground truth will be replaced by forecasted results
+                    # it's ok so far since there is only 1 time inference for vae training
+                    if val_loader.dataset.gen_training:
+                        if model.module.teach_forcing:
+                            batch[input_name] = all_x_samples_gt[:, iter_idx:iter_idx + cond_length + roll_out_step]
+                        else:
+                            # replace last frame of condition with forecasted one, padding with 0.
+                            ori_cond = batch[input_name][:, roll_out_step:cond_length].detach()
+                            forecasted_frame = val_disp_dict['future_seq']
+                            batch[input_name] = torch.cat((ori_cond, forecasted_frame,
+                                                            torch.zeros_like(forecasted_frame)), dim=1)
 
                 if eval_iou:
                     if 'gt_occ' not in val_disp_dict:
@@ -99,16 +101,17 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         gt_occ[gt_occ == len(label_name)] = 0
 
                     IoU_counter._after_step(pred_occ, gt_occ)
-                    #all_miou, cate_miou = mIoU_counter._after_epoch(only_bg)
-                    #all_iou, cate_iou = IoU_counter._after_epoch(only_bg)
+                    #all_miou, cate_miou = mIoU_counter._after_epoch()
+                    #all_iou, cate_iou = IoU_counter._after_epoch()
+                    #print()
 
             if is_main_process:
                 progress.update(val_task, advance=1)
                 console_live.update(Group(progress, format_disp_dict(tb_dict)))
 
     dist.barrier(device_ids=[rank])
-    all_miou, cate_miou = mIoU_counter._after_epoch(only_bg)
-    all_iou, cate_iou = IoU_counter._after_epoch(only_bg)
+    all_miou, cate_miou = mIoU_counter._after_epoch()
+    all_iou, cate_iou = IoU_counter._after_epoch()
     avg_dict = metrics_mean_counter.compute()
 
     if is_main_process:

@@ -8,11 +8,12 @@ class Preprocessor(object):
 
         self.cluster_tolerance = preprocessor_config['cluster_tolerance']
         self.driveable_area = preprocessor_config['drive_area_index']
-        self.cate_num = preprocessor_config['cate_num']
+        self.ori_cate_num = preprocessor_config['ori_cate_num']
         self.non_vehicle_index = preprocessor_config['fg_non_vehicle_index']
 
+        # background voxels include empty
         self.dynamic_object_idx = preprocessor_config['dynamic_objects']
-        self.background_object_idx = [x for x in range(self.cate_num) if x not in self.dynamic_object_idx]
+        self.background_object_idx = [x for x in range(self.ori_cate_num+1) if x not in self.dynamic_object_idx]
 
 
     @staticmethod
@@ -110,7 +111,7 @@ class Preprocessor(object):
     def filter_fg(self, data_dict):
 
         semantic_occ = data_dict['semantic_occ']
-        removed_data, fg_mask = self.mask_dynamic_voxels(semantic_occ, self.dynamic_object_idx, self.cate_num)
+        removed_data, fg_mask = self.mask_dynamic_voxels(semantic_occ, self.dynamic_object_idx, self.ori_cate_num)
         fg_mask_2d = np.any(fg_mask, axis=2)
 
         cluster_voxels = self.find_clusters_with_tolerance(fg_mask_2d, self.cluster_tolerance)
@@ -118,7 +119,7 @@ class Preprocessor(object):
             return data_dict
 
         combined_voxels = np.concatenate(cluster_voxels, axis=0)
-        pillar = (semantic_occ[combined_voxels[:, 0], combined_voxels[:, 1]] != self.cate_num)
+        pillar = (semantic_occ[combined_voxels[:, 0], combined_voxels[:, 1]] != self.ori_cate_num)
         first_indices = np.argmax(pillar, axis=1)
 
         split_indices = np.cumsum([x.shape[0] for x in cluster_voxels])[:-1]
@@ -129,7 +130,7 @@ class Preprocessor(object):
         ground_sem_cate_cluster = []
         for cluster, cluster_height in zip(cluster_voxels, segments):
 
-            sem_cate = self.query_sem(semantic_occ, cluster, self.cate_num)
+            sem_cate = self.query_sem(semantic_occ, cluster, self.ori_cate_num)
             cluster_sem_list = np.bincount(sem_cate)
             cluster_sem = np.argmax(cluster_sem_list)
 
@@ -140,7 +141,7 @@ class Preprocessor(object):
             assert cluster_sem in self.dynamic_object_idx, f"wrong category {cluster_sem}"
             if cluster_sem in self.non_vehicle_index:
                 around_cluster = self.get_external_neighbors(cluster, scene_shape=semantic_occ.shape[:-1])
-                sem_ground_around_cate = self.query_sem(semantic_occ, around_cluster, self.cate_num)
+                sem_ground_around_cate = self.query_sem(semantic_occ, around_cluster, self.ori_cate_num)
 
                 if len(sem_ground_around_cate) == 0:
                     ground_sem_cate_cluster.append(self.driveable_area)
@@ -157,6 +158,14 @@ class Preprocessor(object):
 
         removed_data[loc_need_repair[:, 0], loc_need_repair[:, 1], loc_need_repair[:, 2]] = loc_need_repair[:, 3]
         data_dict['semantic_occ'] = removed_data
+        return data_dict
+
+    def index_reorder(self, data_dict):
+
+        semantic_occ = data_dict['semantic_occ']
+        for new_idx, old_idx in enumerate(self.background_object_idx):
+            semantic_occ[semantic_occ==old_idx] = new_idx
+        data_dict['semantic_occ'] = semantic_occ[None,]
         return data_dict
 
     def __call__(self, data_dict):

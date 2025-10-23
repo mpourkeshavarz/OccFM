@@ -75,7 +75,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None):
     # DDP after load parameters
     # encoder/decoder param also include but no grad
-    model_update_func = auto_regressive_training if model.auto_regressive else single_loop_training
+    model_update_func = auto_regressive_training if getattr(model, 'auto_regressive', False) else single_loop_training
     model = DDP(model, device_ids=[rank])
 
     train_loader.sampler.set_epoch(start_epoch)
@@ -99,7 +99,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 optimizer.zero_grad()
 
                 tb_dict = model_update_func(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler,
-                                            optim_cfg.GRAD_NORM_CLIP, cond_length=train_loader.dataset.hist_length, ema_model=ema_model)
+                                            optim_cfg.GRAD_NORM_CLIP,
+                                            cond_length=getattr(train_loader.dataset, 'hist_length', 0), ema_model=ema_model)
 
                 if is_main_process:
                     progress.update(step_task, advance=1)

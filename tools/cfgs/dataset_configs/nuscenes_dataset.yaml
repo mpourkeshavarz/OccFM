@@ -11,6 +11,8 @@ INFO_PATH: {
 }
 
 DYNAMIC_CLASSES: ['bicycle','bus','car','construction_vehicle','motorcycle','pedestrian','trailer','truck']
+BACKGROUND_CLASSES: ['others', 'barrier', 'traffic_cone', 'driveable_surface', 'other_flat', 'sidewalk', 'terrain',
+                     'manmade', 'vegetation']
 
 PREPROCESSOR:
   CLUSTER_TOLERANCE: 6

@@ -46,7 +46,10 @@ class OccFmVAE(ModelTemplate):
     def get_training_loss(self, batch_dict):
 
         pred_occ, gt_occ = batch_dict['similarity'], batch_dict['semantic_occ']
-        gt_occ = gt_occ.long()
+
+        assert gt_occ.shape[1] == 1, "video input not supported now"
+        gt_occ = gt_occ.long()[:, 0] if len(gt_occ.shape) == 5 else gt_occ.long()
+
         tb_dict, disp_dict = {}, {}
 
         rec_loss = F.cross_entropy(pred_occ.permute(0, 4, 1, 2, 3), gt_occ, ignore_index=-100)
