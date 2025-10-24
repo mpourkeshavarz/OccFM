@@ -40,7 +40,6 @@ class FLOW_MATCHING_DOWN_X4_DiT(nn.Module):
                                                     Attention(dim, heads=temporal_attn_head, dim_head=attn_dim))
         self.init_temporal_attn = Residual(PreNorm(init_3d_conv_channels, temporal_attn(init_3d_conv_channels)))
 
-
         # Condition dim need to be added here
         block_klass_cond = partial(ResnetBlock, time_emb_dim=time_embed_dim)
 

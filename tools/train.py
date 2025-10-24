@@ -88,8 +88,6 @@ if __name__ == '__main__':
     else:
         output_dir = ori_run_name
 
-    print("----------- Create dataloader & network & optimizer -----------")
-
     batch_size = args.batch_size if args.batch_size is not None \
         else cfg.OPTIMIZATION.BATCH_SIZE_PER_GPU * 1
 
@@ -101,6 +99,9 @@ if __name__ == '__main__':
     dist.init_process_group("nccl")
     torch.cuda.set_device(rank)
     is_main_process = (rank == 0)
+
+    if is_main_process:
+        print("----------- Create dataloader & network & optimizer -----------")
 
     model = build_network(model_cfg=cfg.MODEL, loss_cfg=cfg.LOSS, other_cfg=cfg.OTHER_MODEL_CFG).to(rank)
     ema_model = build_ema(model).to(rank) if args.use_ema else None
@@ -174,7 +175,7 @@ if __name__ == '__main__':
         # TODO: fix the duplicated parameters
         # args.cache_mode used to control cache latent or not, used in VAE inference
         # cfg.CACHE_MODE used to skip the compressor in latent CFM when inference
-        if args.cache_mode:
+        if args.cache_mode and args.save_path is not None:
             cache_model(model, [train_loader, val_loader], model_fn_decorator(rank), progress, live=live,
                         console=console, cache_mode=args.cache_mode, mu_sigma_cache=cache_mu_sigma, save_path=args.save_path,
                         is_main_process=is_main_process)

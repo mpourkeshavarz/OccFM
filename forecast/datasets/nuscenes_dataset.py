@@ -13,7 +13,7 @@ class NuScenesDataset(DatasetTemplate):
         preprocess_step = getattr(dataset_cfg, 'preprocess_step', [])
 
         self.sem_mode = dataset_cfg.sem_mode
-        self.label_name = dataset_cfg.background_classes if 'filter_fg' in preprocess_step else dataset_cfg.label_name
+        self.label_name = dataset_cfg.background_classes if self.only_bg else dataset_cfg.label_name
 
         self.iou_eval_length = dataset_cfg.iou_eval_length
         self.roll_out_step = dataset_cfg.roll_out_step

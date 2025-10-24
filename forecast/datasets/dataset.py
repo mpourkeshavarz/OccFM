@@ -7,8 +7,11 @@ class DatasetTemplate(torch_data.Dataset):
         self.training = training
         self.gen_training = gen_training
 
+        # VAE only support 1 frame
         self.forecast_length = dataset_cfg.forecast_length if self.gen_training else 1
         self.hist_length = dataset_cfg.hist_length if self.gen_training else 0
+
+        self.only_bg = dataset_cfg.only_bg
 
         self.win_size = dataset_cfg.get('win_size', 1)
         self.valid_idx, self.all_samples, self.traj = [], [], []

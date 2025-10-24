@@ -10,6 +10,7 @@ DATA_CONFIG:
   _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
   SEQUENCE_LENGTH: 1
   SEM_MODE: True
+  ONLY_BG: True
   PREPROCESS_STEP: ['filter_fg', 'index_reorder']
 
   IOU_EVAL_LENGTH: 1 # total length to eval miou

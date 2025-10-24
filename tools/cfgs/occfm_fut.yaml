@@ -9,6 +9,7 @@ DATA_CONFIG:
     PICKLE_PATH: {'train': './data/nusc_latent_vae/x16/nus_sem_occ_training.pkl',
                   'test': './data/nusc_latent_vae/x16/nus_sem_occ_validation.pkl'}
     SEM_MODE: True
+    ONLY_BG: False
     HIST_LENGTH: 4
     FORECAST_LENGTH: 6
 
