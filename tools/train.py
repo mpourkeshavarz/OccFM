@@ -4,7 +4,6 @@ import os
 import shutil
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.multiprocessing as mp
 import torch
 
 from os.path import isfile
@@ -12,7 +11,7 @@ from os.path import isfile
 from forecast.utils import common_utils
 from easydict import EasyDict
 from pathlib import Path
-from forecast.config import cfg_from_yaml_file, cfg_from_args
+from forecast.config import cfg_from_yaml_file
 from forecast.datasets import build_dataloader, reset_batch_size
 from forecast.models import build_network, model_fn_decorator
 
@@ -23,9 +22,9 @@ from rich.live import Live
 from tools.test import val_model
 
 from torch.optim.swa_utils import AveragedModel
+from tools.common_utils.logging import create_wandb_logger
 
-from rich.console import Console
-from cache_vae import cache_model
+from scripts.cache_vae import cache_model
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
@@ -52,6 +51,10 @@ def parse_config():
     parser.add_argument('--save_path', type=str, default=None, help='checkpoint to start from')
     parser.add_argument('--eval_mode', action='store_true', default=False, help='')
 
+    parser.add_argument('--use_wandb', action='store_true', default=False, help='enable wandb logging')
+    parser.add_argument('--wandb_online', action='store_true', default=True, help='use wandb online mode')
+    parser.add_argument('--wandb_entity', type=str, default='tianranliu-leaf', help='wandb entity')
+
     cfg = EasyDict()
     cfg.ROOT_DIR = (Path(__file__).resolve().parent / '../').resolve()
     cfg.LOCAL_RANK = 0
@@ -77,6 +80,7 @@ if __name__ == '__main__':
     cfg_from_yaml_file(args.cfg_file, cfg)
     cfg.TAG = Path(args.cfg_file).stem
     cfg.EXP_GROUP_PATH = '/'.join(args.cfg_file.split('/')[1:-1])  # remove 'cfgs' and 'xxxx.yaml'
+    cfg.DATA_CONFIG.EVAL_MODE = args.eval_mode
 
     if not recover_training:
         output_dir = cfg.ROOT_DIR / 'logs' / cfg.TAG / args.extra_tag
@@ -103,6 +107,11 @@ if __name__ == '__main__':
     if is_main_process:
         print("----------- Create dataloader & network & optimizer -----------")
 
+    if not args.eval_mode:
+        wandb_logger = create_wandb_logger(cfg, args) if args.use_wandb and is_main_process else None
+    else:
+        wandb_logger = None # TODO: load exist wandb file
+
     model = build_network(model_cfg=cfg.MODEL, loss_cfg=cfg.LOSS, other_cfg=cfg.OTHER_MODEL_CFG).to(rank)
     ema_model = build_ema(model).to(rank) if args.use_ema else None
 
@@ -110,9 +119,6 @@ if __name__ == '__main__':
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,
         gen_training=cfg.GEN_TRAINING, rank=rank, world_size=world_size
     )
-
-    if args.eval_mode and hasattr(cfg.DATA_CONFIG, 'IOU_EVAL_LENGTH'):
-        cfg.DATA_CONFIG.FORECAST_LENGTH = cfg.DATA_CONFIG.ROLL_OUT_STEP
 
     val_set, val_loader = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,
@@ -134,9 +140,11 @@ if __name__ == '__main__':
             ema_model.load_state_dict(model_status['ema_model'])
 
         if cfg.OPTIMIZATION.NUM_EPOCHS > model_status['epoch'] and not args.eval_mode:
-            train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, is_main_process=is_main_process,
-                        ckpt_path=output_dir + '/ckpt/', start_epoch=model_status['epoch'], optim_cfg=cfg.OPTIMIZATION, rank=rank, ema_model=ema_model,
-                        eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, use_amp=args.amp)
+            train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress,
+                        is_main_process=is_main_process, ckpt_path=output_dir + '/ckpt/', start_epoch=model_status['epoch'],
+                        optim_cfg=cfg.OPTIMIZATION, rank=rank, ema_model=ema_model, eval_interval=cfg.EVAL_INTERVAL,
+                        model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, use_amp=args.amp,
+                        wandb_logger=wandb_logger)
         else:
             if is_main_process:
                 console.print(
@@ -148,8 +156,9 @@ if __name__ == '__main__':
         scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader))
 
         train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, rank=rank,
-        use_amp = args.amp, ckpt_path=output_dir + '/ckpt/', start_epoch=0, optim_cfg=cfg.OPTIMIZATION, is_main_process=is_main_process,
-        eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, ema_model=ema_model)
+                    use_amp = args.amp, ckpt_path=output_dir + '/ckpt/', start_epoch=0, optim_cfg=cfg.OPTIMIZATION,
+                    is_main_process=is_main_process, eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank),
+                    loss_monitor=cfg.LOSS_MONITOR, ema_model=ema_model, wandb_logger=wandb_logger)
 
     model = ema_model if ema_model is not None else model
 

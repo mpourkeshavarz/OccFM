@@ -26,7 +26,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
     label_name = val_loader.dataset.label_name
     cond_length = val_loader.dataset.hist_length
     roll_out_step = val_loader.dataset.roll_out_step
-    iter_num = val_loader.dataset.forecast_length // roll_out_step # should be number rollout now
+    iter_num = val_loader.dataset.roll_out_length // roll_out_step # should be number rollout now
 
     model.eval()
 
@@ -54,10 +54,13 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
                 pred_occs = []
                 for iter_idx in range(iter_num):
-                    iter_idx *= roll_out_step
+
+                    start_idx = iter_idx * roll_out_step
+                    end_idx = start_idx + cond_length + roll_out_step
+
                     # always ground truth trajectory and gt path
-                    batch['trajectory'] = all_trajectorys[:, iter_idx:iter_idx + cond_length + roll_out_step]
-                    batch['paths'] = [x[iter_idx:iter_idx + cond_length + roll_out_step] for x in all_paths]
+                    batch['trajectory'] = all_trajectorys[:, start_idx:end_idx]
+                    batch['paths'] = [x[start_idx:end_idx] for x in all_paths]
 
                     val_loss, tb_dict, val_disp_dict = model_func(model, batch)
 
@@ -71,15 +74,18 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
                     # for vae model, here the ground truth will be replaced by forecasted results
                     # it's ok so far since there is only 1 time inference for vae training
-                    if val_loader.dataset.gen_training:
-                        if model.module.teach_forcing:
-                            batch[input_name] = all_x_samples_gt[:, iter_idx:iter_idx + cond_length + roll_out_step]
+                    if val_loader.dataset.gen_training and iter_idx < iter_num - 1:
+                        if model.module.teach_forcing and not test_cfm: # no teach force during test
+                            next_start = (iter_idx + 1) * roll_out_step
+                            next_end = next_start + cond_length + roll_out_step
+                            batch[input_name] = all_x_samples_gt[:, next_start:next_end]
                         else:
                             # replace last frame of condition with forecasted one, padding with 0.
-                            ori_cond = batch[input_name][:, roll_out_step:cond_length].detach()
+                            # last frame will be treated as noise
+                            ori_cond = batch[input_name][:, roll_out_step:roll_out_step + cond_length - 1].detach()
                             forecasted_frame = val_disp_dict['future_seq']
                             batch[input_name] = torch.cat((ori_cond, forecasted_frame,
-                                                            torch.zeros_like(forecasted_frame)), dim=1)
+                                                           torch.zeros_like(forecasted_frame)), dim=1)
 
                 if eval_iou:
                     if 'gt_occ' not in val_disp_dict:

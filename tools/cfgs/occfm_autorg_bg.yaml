@@ -8,8 +8,9 @@ TEACH_FORCE: False
 
 DATA_CONFIG:
     _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
-    PICKLE_PATH: {'train': './data/nusc_latent_vae/only_bg_c10/bg_only_c16_training.pkl',
-                  'test': './data/nusc_latent_vae/only_bg_c10/bg_only_c16_validation.pkl'}
+    PICKLE_PATH: {'train': './data/nusc_latent_vae/only_bg_c10/latent_saved_training.pkl',
+                  'test': './data/nusc_latent_vae/only_bg_c10/latent_saved_validation.pkl'}
+    # OCC_PATH already in pickle file
     ONLY_BG: True
     SEM_MODE: True
     HIST_LENGTH: 4

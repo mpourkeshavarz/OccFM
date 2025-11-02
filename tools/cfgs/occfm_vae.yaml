@@ -8,6 +8,7 @@ LOSS_MONITOR: 'loss'
 
 DATA_CONFIG:
   _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
+  OCC_PATH: 'data/nuscenes'
   SEQUENCE_LENGTH: 1
   SEM_MODE: True
   ONLY_BG: False

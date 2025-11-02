@@ -1,20 +1,17 @@
 import torch
 from torch.nn.utils import clip_grad_norm_
-from rich.progress import (
-    Progress, TextColumn, BarColumn, TimeRemainingColumn,
-    TimeElapsedColumn, SpinnerColumn
-)
 from rich.live import Live
 from tools.test import val_model
 from rich.console import Group
 from contextlib import nullcontext
-
 from tools.common_utils.display_utils import format_disp_dict
+from torch.nn.parallel import DistributedDataParallel as DDP
+from tools.common_utils.logging import wandb_log_train_step, wandb_log_val_step
+
 import torch.distributed as dist
-from rich.console import Console
 import os
 import numpy as np
-from torch.nn.parallel import DistributedDataParallel as DDP
+import wandb
 
 def single_loop_training(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler, max_grad,
                          cond_length=None, ema_model=None):
@@ -71,7 +68,7 @@ def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimize
 
 
 def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_epoch, optim_cfg,
-                model_func, ckpt_path, console, progress, ema_model=None,
+                model_func, ckpt_path, console, progress, ema_model=None, wandb_logger=None,
                 eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None):
     # DDP after load parameters
     # encoder/decoder param also include but no grad
@@ -87,6 +84,9 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                                        completed=start_epoch if start_epoch > 0 else start_epoch+1)
 
     live_ctx = Live(console=console, refresh_per_second=4, transient=True) if is_main_process else nullcontext()
+
+    if is_main_process and wandb_logger is not None:
+        wandb.watch(model.module, log="gradients", log_freq=200)
 
     with live_ctx as live:
         for epoch in range(start_epoch, optim_cfg.NUM_EPOCHS):
@@ -107,6 +107,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                     tb_dict['lr'] = optimizer.param_groups[0]['lr']
                     disp_table = format_disp_dict(tb_dict)
                     live.update(Group(progress, disp_table))
+                    wandb_log_train_step(model.module.global_step, epoch, tb_dict) if wandb_logger is not None else None
 
                 dist.barrier()
 
@@ -126,6 +127,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                                          use_amp=use_amp, rank=rank, is_main_process=is_main_process)
 
                 if is_main_process:
+                    wandb_log_val_step(model.module.global_step, epoch, val_avg_loss) if wandb_logger is not None else None
                     current_loss = val_avg_loss[loss_monitor if loss_monitor is not None else 'loss']
                     historical_losses.append([current_epoch, current_loss])
 

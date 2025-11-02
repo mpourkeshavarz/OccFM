@@ -1,7 +1,13 @@
 import numpy as np
+import yaml
+import os
+import argparse, pickle
 from scipy import ndimage
+from nuscenes.nuscenes import NuScenes
+from rich.progress import track
 
-class Preprocessor(object):
+
+class FilterFg(object):
     def __init__(self, preprocessor_config, steps_use, **kwargs):
 
         self.steps_use = steps_use
@@ -177,3 +183,79 @@ class Preprocessor(object):
             data_dict = getattr(self, step)(data_dict)
 
         return data_dict
+
+def to_lowercase_keys(d):
+    if isinstance(d, dict):
+        new_d = {}
+        for k, v in d.items():
+            new_key = k.lower() if isinstance(k, str) else k
+            new_d[new_key] = to_lowercase_keys(v)
+        return new_d
+    elif isinstance(d, list):
+        return [to_lowercase_keys(item) for item in d]
+    elif isinstance(d, tuple):
+        return tuple(to_lowercase_keys(item) for item in d)
+    else:
+        return d
+
+def parse_config():
+    parser = argparse.ArgumentParser(description='arg parser')
+    parser.add_argument('--dataset', type=str, default=None, help='specify the dataset for fg remove')
+    parser.add_argument('--write_dir', type=str, default=None, help='path for new dataset')
+    return parser.parse_args()
+
+if __name__ == "__main__":
+
+
+    args = parse_config()
+    writeback_dir = args.write_dir
+    preprocessor = {}
+
+    if args.dataset == "nuscenes":
+
+        cfg_file = './tools/cfgs/dataset_configs/nuscenes_dataset.yaml'
+
+        with open(cfg_file, 'r') as f:
+            dataset_cfg = to_lowercase_keys(yaml.safe_load(f))
+
+        preprocessor['dynamic_objects'] = [dataset_cfg['label_name'].index(x) for x in dataset_cfg['dynamic_classes']]
+        preprocessor['drive_area_index'] = 11
+        preprocessor['fg_non_vehicle_index'] = [2, 6, 7]
+        preprocessor['ori_cate_num'] = len(dataset_cfg['label_name'])
+        preprocessor['cluster_tolerance'] = dataset_cfg['preprocessor']['cluster_tolerance']
+
+        filter = FilterFg(preprocessor, steps_use=['filter_fg', 'index_reorder'])
+        nuSc_context_manager = NuScenes(version='v1.0-trainval', dataroot='/data/dataset/nuscenes')
+        pickle_paths = ['nuscenes_infos_train_temporal_v3_scene.pkl', 'nuscenes_infos_val_temporal_v3_scene.pkl']
+
+        for pickle_path in pickle_paths:
+            with open('/data/dataset/nuscenes/' + pickle_path, 'rb') as f:
+                infos = pickle.load(f)['infos']
+
+            using_scenes = list(infos.keys())
+            all_samples = []
+            for scene in nuSc_context_manager.scene:
+                if scene["name"] not in using_scenes:
+                    continue
+                all_token_with_order = [infos[scene["name"]][i]['token'] for i in
+                                        range(len(infos[scene["name"]]))]
+                path = [f'/gts/{scene["name"]}/' + x + '/labels.npz' for x in
+                        all_token_with_order]
+                all_samples.extend(path)
+
+            for occ_path in track(all_samples):
+                readable_path = '/data/dataset/nuscenes' + occ_path
+                np_file = np.load(readable_path)
+
+                input_dict = {'semantic_occ': np_file['semantics']}
+                bg_occ = filter(input_dict)['semantic_occ'][0]
+                writedback_dir = writeback_dir + occ_path
+                save_path = writedback_dir[:-10]
+
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                np.savez(writedback_dir, semantics=bg_occ)
+
+
+
+
+

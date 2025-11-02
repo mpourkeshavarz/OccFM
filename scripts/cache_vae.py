@@ -1,5 +1,6 @@
 import torch
 import pickle
+import os
 from rich.console import Group
 from forecast.utils.eval_utils import DistributedListBuffer
 
@@ -51,11 +52,10 @@ def cache_model(model, data_loader, model_func, progress, cache_mode=False, live
         merged_data = all_data_save.gather()
         if is_main_process:
             progress.remove_task(cache_task)
-            file_name = save_path + '_' + split + '.pkl'
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            file_name = save_path + 'latent_saved_' + split + '.pkl'
             console.print(
                 f"[bold magenta]✔️ {len(merged_data)} samples in {split} set cached at {file_name}[/bold magenta]"
             )
             with open(file_name, "wb") as f:
                 pickle.dump(merged_data, f)
-
-

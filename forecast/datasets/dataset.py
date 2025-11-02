@@ -7,9 +7,13 @@ class DatasetTemplate(torch_data.Dataset):
         self.training = training
         self.gen_training = gen_training
 
-        # VAE only support 1 frame
+        # VAE only support 1 frame, used for training
         self.forecast_length = dataset_cfg.forecast_length if self.gen_training else 1
         self.hist_length = dataset_cfg.hist_length if self.gen_training else 0
+
+        self.iou_eval_length = dataset_cfg.iou_eval_length
+        self.roll_out_step = dataset_cfg.roll_out_step
+        self.roll_out_length = dataset_cfg.roll_out_length
 
         self.only_bg = dataset_cfg.only_bg
 
@@ -19,9 +23,14 @@ class DatasetTemplate(torch_data.Dataset):
     def __len__(self):
         return len(self.valid_idx)
 
-    def select_valid(self, training):
+    def select_valid(self, training, gen_test=False):
         self.valid_idx = []
-        self.safe_length = self.forecast_length + self.hist_length if self.gen_training else getattr(self, 'sequence_length', 1)
+
+        if gen_test:
+            self.safe_length = self.iou_eval_length + self.hist_length
+        else:
+            self.safe_length = self.forecast_length + self.hist_length if self.gen_training else getattr(self, 'roll_out_length', 1)
+
         scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
         for idx, scene in enumerate(scenes_list):
             sub_seq = scenes_list[idx: idx + self.safe_length]
