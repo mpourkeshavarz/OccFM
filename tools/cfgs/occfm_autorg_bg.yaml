@@ -3,8 +3,10 @@ NAME: OccFM
 GEN_TRAINING: True # Skip the VAE structure
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
+
 AUTO_REG: True
-TEACH_FORCE: False
+TEACH_FORCE: True
+WITH_CFG: False
 
 DATA_CONFIG:
     _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
@@ -38,7 +40,7 @@ PLANNER_CONFIG:
     PASS: True
 
 LOSS:
-  UNCOND_P: 0.2
+  UNCOND_P: 0.0
   RESCALE_FACTOR: 10
   SAMPLE_STEP: 10
   ALPHA_STEP: 3
@@ -47,7 +49,7 @@ LOSS:
 OPTIMIZATION:
     NAME: ADAM
 
-    BATCH_SIZE_PER_GPU: 6
+    BATCH_SIZE_PER_GPU: 3
     NUM_EPOCHS: 100
     BASE_LR: 2.0e-05
     WARMUP_STEPS: 1000

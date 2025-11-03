@@ -26,7 +26,11 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
     label_name = val_loader.dataset.label_name
     cond_length = val_loader.dataset.hist_length
     roll_out_step = val_loader.dataset.roll_out_step
-    iter_num = val_loader.dataset.roll_out_length // roll_out_step # should be number rollout now
+
+    if test_cfm:
+        iter_num = val_loader.dataset.roll_out_length // roll_out_step # should be number rollout now
+    else:
+        iter_num = val_loader.dataset.forecast_length // roll_out_step
 
     model.eval()
 

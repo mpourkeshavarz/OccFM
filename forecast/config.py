@@ -47,8 +47,9 @@ def cfg_from_yaml_file(cfg_file, config):
 
     config['MODEL']['NAME'] = config['NAME']
 
+    # TODO: a more elegant way
     config['OTHER_MODEL_CFG'] = {'auto_reg': getattr(config, 'AUTO_REG', False), 'gen_training': getattr(config, 'GEN_TRAINING', None),
-                                 'teach_force': getattr(config, 'TEACH_FORCE', True)}
+                                 'teach_force': getattr(config, 'TEACH_FORCE', True), 'with_cfg': getattr(config, 'WITH_CFG', True)}
     return config
 
 def cfg_from_args(cfg, args):

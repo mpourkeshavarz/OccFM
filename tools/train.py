@@ -165,9 +165,8 @@ if __name__ == '__main__':
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
-        model = DDP(model, device_ids=[rank]) if recover_training else None
-        test_cfm = hasattr(model.module.module, 'transition_model') if isinstance(model.module, AveragedModel) else \
-            hasattr(model.module, 'transition_model')
+        model = DDP(model, device_ids=[rank]) if recover_training else model
+        test_cfm = hasattr(model.module, 'transition_model')
 
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)

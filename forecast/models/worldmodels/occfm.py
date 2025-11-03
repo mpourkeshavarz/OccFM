@@ -17,6 +17,7 @@ class OccFM(ModelTemplate):
         self.module_list = self.build_model(self.world_model_topology, skip_list)
         self.auto_regressive = other_cfg.get('auto_reg', False)
         self.teach_forcing = other_cfg.get('teach_force', True)
+        self.eval_with_cfg = other_cfg.get('with_cfg', True)
 
         self.uncond_p = loss_cfg['UNCOND_P']
         self.rescale_factor = loss_cfg['RESCALE_FACTOR']
@@ -56,7 +57,7 @@ class OccFM(ModelTemplate):
 
         return future_seq, target, future_predict
 
-    def sample(self, batch_dict, batch_size):
+    def sample_cfg(self, batch_dict, batch_size):
         """
         input: full sequence with pure noise future
         traj: trajectory for each batch
@@ -108,6 +109,53 @@ class OccFM(ModelTemplate):
 
         return output
 
+    def sample(self, batch_dict, batch_size):
+        """
+        input: full sequence with pure noise future
+        traj: trajectory for each batch
+        """
+        # init
+        input = batch_dict['x_sampled']  # [B, T, ...]
+        device = input.device
+        dtype = input.dtype
+
+        # SD3 的 t-shift
+        timesteps = torch.linspace(0, 1, self.sample_step + 1, device=device, dtype=dtype)
+        t_shifted = 1 - (self.alpha * timesteps) / (1 + (self.alpha - 1) * timesteps)
+        t_shifted = t_shifted.flip(0)
+
+        # ODE solve
+        for t_curr, t_prev in zip(t_shifted[:-1], t_shifted[1:]):
+            step = t_prev - t_curr  # scalar (tensor)
+            # 每个样本一个 t（同值），shape [B]
+            t_vec = torch.full((input.shape[0],), float(t_curr * self.time_scalar), device=device, dtype=dtype)
+
+            # 拆 cond / future
+            cond_len = batch_dict['cond_length']
+            cond_seq, future_seq = torch.split(input, [cond_len, input.shape[1] - cond_len], dim=1)
+
+            # 单路前向：noised_sequence 就是 input；不拼无条件分支
+            batch_dict['noised_sequence'] = input
+            batch_dict['timesteps'] = t_vec
+
+            for cur_module in self.module_list:
+                batch_dict = cur_module(batch_dict)
+            v = batch_dict['predicted_latent']  # [B, T, ...]
+
+            # 只拿未来帧的 v
+            _, v_future = torch.split(v, [cond_len, input.shape[1] - cond_len], dim=1)
+
+            # 一步 ODE 更新未来帧
+            denoised_future_frames = future_seq + step * v_future
+
+            # 组回输入，进入下一个时间步
+            input = torch.cat((cond_seq, denoised_future_frames), dim=1)
+
+        # 输出未来段
+        _, output = torch.split(input, [cond_len, input.shape[1] - cond_len], dim=1)
+        output /= self.rescale_factor
+        return output
+
     @cuda_timer
     def cfm_eval(self, future_clip, condition_clip, batch_dict, batch_size):
 
@@ -115,7 +163,10 @@ class OccFM(ModelTemplate):
         batch_dict['x_sampled'] = torch.concat((condition_clip, start_future_latent), dim=1)
 
         assert batch_size == 1, "cfm eval time = 1 only now"
-        batch_dict['sampled_features'] = self.sample(batch_dict, batch_size).squeeze(0)
+        if self.eval_with_cfg:
+            batch_dict['sampled_features'] = self.sample_cfg(batch_dict, batch_size).squeeze(0)
+        else:
+            batch_dict['sampled_features'] = self.sample(batch_dict, batch_size).squeeze(0)
 
         self.decoder.skip = False
         batch_dict = self.decoder(batch_dict)

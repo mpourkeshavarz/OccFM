@@ -85,8 +85,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
     live_ctx = Live(console=console, refresh_per_second=4, transient=True) if is_main_process else nullcontext()
 
-    if is_main_process and wandb_logger is not None:
-        wandb.watch(model.module, log="gradients", log_freq=200)
+    # if is_main_process and wandb_logger is not None:
+    #     wandb.watch(model.module, log="gradients", log_freq=200)
 
     with live_ctx as live:
         for epoch in range(start_epoch, optim_cfg.NUM_EPOCHS):
