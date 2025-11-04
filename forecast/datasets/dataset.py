@@ -27,11 +27,11 @@ class DatasetTemplate(torch_data.Dataset):
         self.valid_idx = []
 
         if gen_test:
-            self.safe_length = self.iou_eval_length + self.hist_length
+            self.safe_length = self.roll_out_length + self.hist_length # only count frames
         else:
             self.safe_length = self.forecast_length + self.hist_length if self.gen_training else getattr(self, 'roll_out_length', 1)
 
-        scenes_list = [x[0].split('/')[3] if isinstance(x, list) else x.split('/')[3] for x in self.all_samples]
+        scenes_list = [x[0].split('/')[-3] if isinstance(x, list) else x.split('/')[-3] for x in self.all_samples]
         for idx, scene in enumerate(scenes_list):
             sub_seq = scenes_list[idx: idx + self.safe_length]
             if len(set(sub_seq)) == 1 and len(sub_seq) == self.safe_length:

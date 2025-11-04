@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import copy
+import os
 from rich.console import Group
 import torch.distributed as dist
 
@@ -21,7 +21,7 @@ def setup_occ_comparsion(label_name, frame):
 
 
 def val_model(model, val_loader, model_func, progress, console_live, use_amp=False, eval_iou=False,
-              eval_fps=False, is_main_process=None, rank=None, test_cfm=False):
+              eval_fps=False, is_main_process=None, rank=None, test_cfm=False, fid_eval_path=None):
 
     label_name = val_loader.dataset.label_name
     cond_length = val_loader.dataset.hist_length
@@ -31,6 +31,10 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
         iter_num = val_loader.dataset.roll_out_length // roll_out_step # should be number rollout now
     else:
         iter_num = val_loader.dataset.forecast_length // roll_out_step
+
+    if val_loader.dataset.roll_out_length > val_loader.dataset.iou_eval_length:
+        assert fid_eval_path is not None, "fid eval path should be given if roll_out_length > iou_eval_length"
+        os.makedirs(os.path.dirname(fid_eval_path), exist_ok=True)
 
     model.eval()
 
@@ -56,7 +60,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
                 batch[input_name] = all_x_samples_gt[:, :cond_length + roll_out_step]
 
-                pred_occs = []
+                pred_occs_near = []
+                pred_occs_all = []
                 for iter_idx in range(iter_num):
 
                     start_idx = iter_idx * roll_out_step
@@ -72,9 +77,10 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         tb_dict["time"] = val_disp_dict["time"]
 
                     metrics_mean_counter.update(tb_dict)
+                    pred_occs_all.append(val_disp_dict['pred_occ'].detach().cpu())
 
-                    if eval_iou:
-                        pred_occs.append(val_disp_dict['pred_occ'].detach().cpu())
+                    if eval_iou and iter_idx < iou_eval_length:
+                        pred_occs_near.append(val_disp_dict['pred_occ'].detach().cpu())
 
                     # for vae model, here the ground truth will be replaced by forecasted results
                     # it's ok so far since there is only 1 time inference for vae training
@@ -91,7 +97,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                             batch[input_name] = torch.cat((ori_cond, forecasted_frame,
                                                            torch.zeros_like(forecasted_frame)), dim=1)
 
-                if eval_iou:
+                if eval_iou and iter_idx < iou_eval_length:
                     if 'gt_occ' not in val_disp_dict:
                         all_seq_gtocc_path = all_paths[0][cond_length:cond_length + iou_eval_length]
                         gt_occ = torch.as_tensor(np.stack([np.load(x[0])['semantics'] if isinstance(x, list)
@@ -99,7 +105,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                     else:
                         gt_occ = val_disp_dict['gt_occ'].detach().cpu()
 
-                    pred_occ = torch.concat(pred_occs, dim=1)
+                    pred_occ = torch.concat(pred_occs_near, dim=1)
 
                     if val_loader.dataset.sem_mode:
                         mIoU_counter._after_step(pred_occ, gt_occ)
@@ -114,6 +120,12 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                     #all_miou, cate_miou = mIoU_counter._after_epoch()
                     #all_iou, cate_iou = IoU_counter._after_epoch()
                     #print()
+
+            dist.barrier(device_ids=[rank])
+            pred_occs_all = torch.concat(pred_occs_all, dim=1).squeeze(0).numpy().astype(np.uint8)
+            gt_occ_all = np.stack([np.load(x[0])['semantics'] for x in all_paths[0][cond_length:]])
+            np.save(fid_eval_path + f'/gt_{str(batch_idx).zfill(4)}.npy', gt_occ_all)
+            np.save(fid_eval_path + f'/pred_{str(batch_idx).zfill(4)}.npy', pred_occs_all)
 
             if is_main_process:
                 progress.update(val_task, advance=1)

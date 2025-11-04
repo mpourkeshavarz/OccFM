@@ -55,6 +55,9 @@ def parse_config():
     parser.add_argument('--wandb_online', action='store_true', default=True, help='use wandb online mode')
     parser.add_argument('--wandb_entity', type=str, default='tianranliu-leaf', help='wandb entity')
 
+    parser.add_argument('--rollout_length', type=int, default=None, help='give rollout length manually')
+    parser.add_argument('--fid_eval_path', type=str, default=None, help='path to save occ rollout for fid eval later')
+
     cfg = EasyDict()
     cfg.ROOT_DIR = (Path(__file__).resolve().parent / '../').resolve()
     cfg.LOCAL_RANK = 0
@@ -120,6 +123,9 @@ if __name__ == '__main__':
         gen_training=cfg.GEN_TRAINING, rank=rank, world_size=world_size
     )
 
+    if args.eval_mode and args.rollout_length is not None:
+        cfg.DATA_CONFIG.ROLL_OUT_LENGTH = int(args.rollout_length)
+
     val_set, val_loader = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG, batch_size=batch_size, num_workers=args.workers,
         gen_training=cfg.GEN_TRAINING, training=False, rank=rank, world_size=world_size
@@ -173,7 +179,7 @@ if __name__ == '__main__':
 
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
                                  test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
-                                 is_main_process=is_main_process)
+                                 is_main_process=is_main_process, fid_eval_path=args.fid_eval_path)
 
         if is_main_process:
             show_eval(val_avg_loss, console)
