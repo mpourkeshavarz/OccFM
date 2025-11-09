@@ -52,7 +52,7 @@ def parse_config():
     parser.add_argument('--eval_mode', action='store_true', default=False, help='')
 
     parser.add_argument('--use_wandb', action='store_true', default=False, help='enable wandb logging')
-    parser.add_argument('--wandb_online', action='store_true', default=True, help='use wandb online mode')
+    parser.add_argument('--wandb_offline', action='store_false', default=False, help='use wandb online mode')
     parser.add_argument('--wandb_entity', type=str, default='tianranliu-leaf', help='wandb entity')
 
     parser.add_argument('--rollout_length', type=int, default=None, help='give rollout length manually')
@@ -112,6 +112,7 @@ if __name__ == '__main__':
 
     if not args.eval_mode:
         wandb_logger = create_wandb_logger(cfg, args) if args.use_wandb and is_main_process else None
+        dist.barrier()
     else:
         wandb_logger = None # TODO: load exist wandb file
 
@@ -172,14 +173,16 @@ if __name__ == '__main__':
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
         model = DDP(model, device_ids=[rank]) if recover_training else model
-        test_cfm = hasattr(model.module, 'transition_model')
+        test_cfm = hasattr(model.module, 'transition_model') if not args.use_ema else hasattr(model.module.module, 'transition_model')
+        teach_forcing = model.module.teach_forcing if not args.use_ema else model.module.module.teach_forcing
 
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
 
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
                                  test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
-                                 is_main_process=is_main_process, fid_eval_path=args.fid_eval_path)
+                                 is_main_process=is_main_process, teach_forcing=teach_forcing,
+                                 fid_eval_path=args.fid_eval_path)
 
         if is_main_process:
             show_eval(val_avg_loss, console)

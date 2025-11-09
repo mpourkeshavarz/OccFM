@@ -23,14 +23,17 @@ def wandb_log_train_step(global_step, epoch, tb_dict):
 
 def create_wandb_logger(cfg, args):
 
-    if args.wandb_online:
-        r = requests.get("http://worldtimeapi.org/api/timezone/Etc/UTC")
-        utc_time = datetime.fromisoformat(r.json()["utc_datetime"].replace("Z", "+00:00"))
-        current_time = 'UTC: ' + utc_time.strftime("%Y-%m-%d %H:%M:%S")
+    if not args.wandb_offline:
+        try:
+            r = requests.get("http://worldtimeapi.org/api/timezone/Etc/UTC")
+            utc_time = datetime.fromisoformat(r.json()["utc_datetime"].replace("Z", "+00:00"))
+            current_time = 'UTC: ' + utc_time.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            current_time = 'Local time: ' + datetime.now().strftime("%Y-%m-%d-%H:%M")
     else:
         current_time = 'Local time: ' + datetime.now().strftime("%Y-%m-%d-%H:%M")
 
-    wandb_mode = 'online' if args.wandb_online else 'offline'
+    wandb_mode = 'offline' if args.wandb_offline else 'online'
     hostname = socket.gethostname()
 
     run_name = f"{cfg.TAG}-{args.extra_tag}-{hostname}-{current_time}"

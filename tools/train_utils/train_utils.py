@@ -45,7 +45,10 @@ def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimize
                           'cond_length': cond_length}
 
         if len(run_time_forecasted) > 0:
-            temp_data_dict['x_sampled'][:, -1-len(run_time_forecasted):-1] = np.concatenate(run_time_forecasted, axis=1)
+            if len(run_time_forecasted) < cond_length:
+                temp_data_dict['x_sampled'][:, -1-len(run_time_forecasted):-1] = np.concatenate(run_time_forecasted, axis=1)
+            else:
+                temp_data_dict['x_sampled'][:, -1-cond_length:-1] = np.concatenate(run_time_forecasted[-cond_length:], axis=1)
 
         with torch.amp.autocast('cuda', enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, temp_data_dict)
@@ -122,8 +125,9 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
             if val_loader is not None and current_epoch % eval_interval == 0:
 
                 eval_model = ema_model if ema_model is not None else model
+                teach_forcing = eval_model.module.teach_forcing
 
-                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live,
+                val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, teach_forcing=teach_forcing,
                                          use_amp=use_amp, rank=rank, is_main_process=is_main_process)
 
                 if is_main_process:

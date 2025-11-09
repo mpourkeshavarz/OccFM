@@ -21,7 +21,8 @@ def setup_occ_comparsion(label_name, frame):
 
 
 def val_model(model, val_loader, model_func, progress, console_live, use_amp=False, eval_iou=False,
-              eval_fps=False, is_main_process=None, rank=None, test_cfm=False, fid_eval_path=None):
+              eval_fps=False, is_main_process=None, rank=None, test_cfm=False, teach_forcing=True,
+              fid_eval_path=None):
 
     label_name = val_loader.dataset.label_name
     cond_length = val_loader.dataset.hist_length
@@ -85,7 +86,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                     # for vae model, here the ground truth will be replaced by forecasted results
                     # it's ok so far since there is only 1 time inference for vae training
                     if val_loader.dataset.gen_training and iter_idx < iter_num - 1:
-                        if model.module.teach_forcing and not test_cfm: # no teach force during test
+                        if teach_forcing and not test_cfm: # no teach force during test
                             next_start = (iter_idx + 1) * roll_out_step
                             next_end = next_start + cond_length + roll_out_step
                             batch[input_name] = all_x_samples_gt[:, next_start:next_end]
@@ -96,8 +97,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                             forecasted_frame = val_disp_dict['future_seq']
                             batch[input_name] = torch.cat((ori_cond, forecasted_frame,
                                                            torch.zeros_like(forecasted_frame)), dim=1)
-
-                if eval_iou and iter_idx < iou_eval_length:
+                # generation end here, save & compare
+                if eval_iou:
                     if 'gt_occ' not in val_disp_dict:
                         all_seq_gtocc_path = all_paths[0][cond_length:cond_length + iou_eval_length]
                         gt_occ = torch.as_tensor(np.stack([np.load(x[0])['semantics'] if isinstance(x, list)
@@ -122,10 +123,12 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                     #print()
 
             dist.barrier(device_ids=[rank])
-            pred_occs_all = torch.concat(pred_occs_all, dim=1).squeeze(0).numpy().astype(np.uint8)
-            gt_occ_all = np.stack([np.load(x[0])['semantics'] for x in all_paths[0][cond_length:]])
-            np.save(fid_eval_path + f'/gt_{str(batch_idx).zfill(4)}.npy', gt_occ_all)
-            np.save(fid_eval_path + f'/pred_{str(batch_idx).zfill(4)}.npy', pred_occs_all)
+
+            if len(pred_occs_all) > 0:
+                pred_occs_all = torch.concat(pred_occs_all, dim=1).squeeze(0).numpy().astype(np.uint8)
+                gt_occ_all = np.stack([np.load(x[0])['semantics'] for x in all_paths[0][cond_length:]])
+                np.save(fid_eval_path + f'/gt_{str(batch_idx).zfill(4)}.npy', gt_occ_all)
+                np.save(fid_eval_path + f'/pred_{str(batch_idx).zfill(4)}.npy', pred_occs_all)
 
             if is_main_process:
                 progress.update(val_task, advance=1)
