@@ -9,13 +9,13 @@ from tools.common_utils.common_utils import accumulate_disp_dict
 from forecast.utils.eval_utils import multi_step_MeanIou, DistributedDictMeanCounter
 
 
-def setup_occ_comparsion(label_name, frame):
+def setup_occ_comparsion(label_name, frame, rank):
 
     unique_labels = np.asarray([x for x in range(len(label_name))])
     unique_label_str = [label_name[l] for l in unique_labels]
-    IoU_counter = multi_step_MeanIou([1], -100, ['occupied'], 'vox', times=frame)
+    IoU_counter = multi_step_MeanIou([1], -100, ['occupied'], 'vox', times=frame, rank=rank)
     IoU_counter.reset()
-    mIoU_counter = multi_step_MeanIou(unique_labels, -100, unique_label_str, 'sem', times=frame)
+    mIoU_counter = multi_step_MeanIou(unique_labels, -100, unique_label_str, 'sem', times=frame, rank=rank)
     mIoU_counter.reset()
     return IoU_counter, mIoU_counter
 
@@ -43,7 +43,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
         val_task = progress.add_task(description="Eval samples", total=len(val_loader))
 
     iou_eval_length = val_loader.dataset.iou_eval_length
-    IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, iou_eval_length)
+    IoU_counter, mIoU_counter = setup_occ_comparsion(label_name, iou_eval_length, rank)
     metrics_mean_counter = DistributedDictMeanCounter(rank)
 
     with torch.no_grad():

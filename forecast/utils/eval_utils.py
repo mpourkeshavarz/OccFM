@@ -91,7 +91,7 @@ class multi_step_MeanIou:
                  class_indices,
                  ignore_label: int,
                  label_str,
-                 name,
+                 name, rank,
                  times=1, dist=True):
         self.class_indices = class_indices
         self.num_classes = len(class_indices)
@@ -100,19 +100,20 @@ class multi_step_MeanIou:
         self.name = name
         self.times = times
         self.dist = dist
+        self.device = torch.device(f"cuda:{rank}")
 
-    def reset(self) -> None:
-        self.total_seen = torch.zeros(self.times, self.num_classes).cuda()
-        self.total_correct = torch.zeros(self.times, self.num_classes).cuda()
-        self.total_positive = torch.zeros(self.times, self.num_classes).cuda()
+    def reset(self):
+        self.total_seen = torch.zeros(self.times, self.num_classes, device=self.device)
+        self.total_correct = torch.zeros(self.times, self.num_classes, device=self.device)
+        self.total_positive = torch.zeros(self.times, self.num_classes, device=self.device)
 
     def _after_step(self, outputses, targetses):
 
         assert outputses.shape[1] == self.times, f'{outputses.shape[1]} != {self.times}'
         assert targetses.shape[1] == self.times, f'{targetses.shape[1]} != {self.times}'
         for t in range(self.times):
-            outputs = outputses[:, t, ...][targetses[:, t, ...] != self.ignore_label].cuda()
-            targets = targetses[:, t, ...][targetses[:, t, ...] != self.ignore_label].cuda()
+            outputs = outputses[:, t, ...][targetses[:, t, ...] != self.ignore_label].to(self.device)
+            targets = targetses[:, t, ...][targetses[:, t, ...] != self.ignore_label].to(self.device)
             for j, c in enumerate(self.class_indices):
                 self.total_seen[t, j] += torch.sum(targets == c).item()
                 self.total_correct[t, j] += torch.sum((targets == c) & (outputs == c)).item()

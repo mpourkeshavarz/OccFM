@@ -172,7 +172,7 @@ if __name__ == '__main__':
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
-        model = DDP(model, device_ids=[rank]) if recover_training else model
+        model = DDP(model, device_ids=[local_rank]) if recover_training else model
         test_cfm = hasattr(model.module, 'transition_model') if not args.use_ema else hasattr(model.module.module, 'transition_model')
 
         if val_loader.dataset.gen_training:
@@ -180,10 +180,10 @@ if __name__ == '__main__':
         else:
             teach_forcing = False
 
-        train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
-        val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)
+        train_loader = reset_batch_size(train_loader, 1, rank=local_rank, world_size=world_size, training=True)
+        val_loader = reset_batch_size(val_loader, 1, rank=local_rank, world_size=world_size)
 
-        val_avg_loss = val_model(model, val_loader, model_fn_decorator(rank), progress, live, rank=rank,
+        val_avg_loss = val_model(model, val_loader, model_fn_decorator(local_rank), progress, live, rank=local_rank,
                                  test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
                                  is_main_process=is_main_process, teach_forcing=teach_forcing,
                                  fid_eval_path=args.fid_eval_path)
