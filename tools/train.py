@@ -174,7 +174,11 @@ if __name__ == '__main__':
 
         model = DDP(model, device_ids=[rank]) if recover_training else model
         test_cfm = hasattr(model.module, 'transition_model') if not args.use_ema else hasattr(model.module.module, 'transition_model')
-        teach_forcing = model.module.teach_forcing if not args.use_ema else model.module.module.teach_forcing
+
+        if val_loader.dataset.gen_training:
+            teach_forcing = model.module.teach_forcing if not args.use_ema else model.module.module.teach_forcing
+        else:
+            teach_forcing = False
 
         train_loader = reset_batch_size(train_loader, 1, rank=rank, world_size=world_size, training=True)
         val_loader = reset_batch_size(val_loader, 1, rank=rank, world_size=world_size)

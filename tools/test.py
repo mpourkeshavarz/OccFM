@@ -78,10 +78,11 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         tb_dict["time"] = val_disp_dict["time"]
 
                     metrics_mean_counter.update(tb_dict)
-                    pred_occs_all.append(val_disp_dict['pred_occ'].detach().cpu())
 
-                    if eval_iou and iter_idx < iou_eval_length:
-                        pred_occs_near.append(val_disp_dict['pred_occ'].detach().cpu())
+                    if eval_iou:
+                        pred_occs_all.append(val_disp_dict['pred_occ'].detach().cpu())
+                        if iter_idx < iou_eval_length:
+                            pred_occs_near.append(val_disp_dict['pred_occ'].detach().cpu())
 
                     # for vae model, here the ground truth will be replaced by forecasted results
                     # it's ok so far since there is only 1 time inference for vae training
@@ -124,7 +125,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
             dist.barrier(device_ids=[rank])
 
-            if len(pred_occs_all) > 0:
+            if len(pred_occs_all) > 0 and fid_eval_path is not None:
                 pred_occs_all = torch.concat(pred_occs_all, dim=1).squeeze(0).numpy().astype(np.uint8)
                 gt_occ_all = np.stack([np.load(x[0])['semantics'] for x in all_paths[0][cond_length:]])
                 np.save(fid_eval_path + f'/gt_{str(batch_idx).zfill(4)}.npy', gt_occ_all)
