@@ -10,7 +10,7 @@ class NuScenesDataset(DatasetTemplate):
         super().__init__(dataset_cfg, training, gen_training)
 
         self.sem_mode = dataset_cfg.sem_mode
-        self.label_name = dataset_cfg.background_classes if self.only_bg else dataset_cfg.label_name
+        self.label_name =  dataset_cfg.label_name #dataset_cfg.background_classes if self.only_bg else dataset_cfg.label_name
 
         pickle_path = dataset_cfg['info_path']['train' if training else 'test'][0]
         pickle_path = os.path.join(dataset_cfg['data_path'], pickle_path)

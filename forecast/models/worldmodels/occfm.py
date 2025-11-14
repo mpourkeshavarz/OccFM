@@ -188,7 +188,60 @@ class OccFM(ModelTemplate):
 
     def forward(self, batch_dict):
 
-        x_sampled = batch_dict['x_sampled']
+        # If x_sampled is not provided, encode semantic_occ on-the-fly using frozen VAE encoder
+        if 'x_sampled' not in batch_dict:
+            # Encode semantic_occ through frozen compressor (embedding -> encoder -> quantization)
+            # Stack semantic_occ list into tensor: [B, T, H, W, D]
+            semantic_occ_list = batch_dict['semantic_occ']
+            if isinstance(semantic_occ_list, list):
+                # Convert list of numpy arrays to tensor
+                semantic_occ_tensor = torch.stack([torch.from_numpy(x) if isinstance(x, np.ndarray) else x 
+                                                   for x in semantic_occ_list], dim=0)  # [B, T, H, W, D]
+            else:
+                semantic_occ_tensor = semantic_occ_list
+            
+            # Move to same device as model
+            device = next(self.parameters()).device
+            semantic_occ_tensor = semantic_occ_tensor.to(device)
+            
+            # Reshape to process each frame: [B*T, H, W, D]
+            B, T = semantic_occ_tensor.shape[0], semantic_occ_tensor.shape[1]
+            semantic_occ_flat = semantic_occ_tensor.view(B * T, *semantic_occ_tensor.shape[2:])
+            
+            # Encode through frozen compressor modules
+            # Temporarily disable skip flags to allow encoding
+            embedding_skip = getattr(self.embedding, 'skip', False)
+            encoder_skip = getattr(self.encoder, 'skip', False)
+            quantization_skip = getattr(self.quantization, 'skip', False)
+            
+            self.embedding.skip = False
+            self.encoder.skip = False
+            self.quantization.skip = False
+            
+            with torch.no_grad():
+                # Embedding
+                temp_dict = {'semantic_occ': semantic_occ_flat}
+                temp_dict = self.embedding(temp_dict)
+                
+                # Encoder
+                temp_dict = self.encoder(temp_dict)
+                
+                # Quantization
+                temp_dict = self.quantization(temp_dict)
+                
+                # Get sampled_features (latents)
+                sampled_features = temp_dict['sampled_features']  # [B*T, C, H', W']
+            
+            # Restore skip flags
+            self.embedding.skip = embedding_skip
+            self.encoder.skip = encoder_skip
+            self.quantization.skip = quantization_skip
+            
+            # Reshape back to [B, T, C, H', W']
+            x_sampled = sampled_features.view(B, T, *sampled_features.shape[1:])
+        else:
+            x_sampled = batch_dict['x_sampled']
+        
         batch_size = len(batch_dict['paths'])
 
         x_sampled = self.rescale_factor * x_sampled

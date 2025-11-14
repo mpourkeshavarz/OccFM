@@ -5,28 +5,35 @@ EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
 
 DATA_CONFIG:
-    _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
-    PICKLE_PATH: {'train': './data/nusc_latent_vae/x16/nus_sem_occ_training.pkl',
-                  'test': './data/nusc_latent_vae/x16/nus_sem_occ_validation.pkl'}
-    OCC_PATH: 'data/nuscenes'
+    # _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
+    _BASE_CONFIG_: tools/cfgs/dataset_configs/waymo_dataset_occ_only.yaml
+    # PICKLE_PATH: Optional - if provided, loads cached VAE latents; if not, encodes semantic_occ on-the-fly
+    # Example: PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_sem_occ_training.pkl',
+    #                       'test': './data/waymo_latent_vae/x16/waymo_sem_occ_validation.pkl'}
+    # PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_sem_occ_training.pkl',
+    #              'test': './data/waymo_latent_vae/x16/waymo_sem_occ_validation.pkl'}
+    # OCC_PATH: 'data/nuscenes'
     ONLY_BG: False
     SEM_MODE: True
-    HIST_LENGTH: 4
-    FORECAST_LENGTH: 6
+    HIST_LENGTH: 10
+    FORECAST_LENGTH: 80
+    SEQUENCE_LENGTH: 90
 
-    IOU_EVAL_LENGTH: 6 # total length to eval miou
-    ROLL_OUT_LENGTH: 6 # total length of eval
-    ROLL_OUT_STEP: 6
+    IOU_EVAL_LENGTH: 80 # total length to eval miou
+    ROLL_OUT_LENGTH: 80 # total length of eval
+    ROLL_OUT_STEP: 80
 
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
-    PRETRAIN_WEIGHT: logs/occfm_vae/100ep_3docc_sem_voxel/ckpt/epoch=000100.ckpt
+    PRETRAIN_WEIGHT: logs/occfm_vae_occ_only_waymo/train_new/ckpt/epoch=000001.ckpt
+    EMBEDDING:
+        NUM_CATE: 16  # Waymo has 16 classes
 
 TRANSITION_MODEL_CONFIG:
     _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
     TRANSITION_MODEL:
-      TRAJECTORY_LENGTH: 6 # autoregressive based, should be hist_last+1
-      SEQ_LENGTH: 10 # cond + forecast
+      TRAJECTORY_LENGTH: 11 # autoregressive based, should be hist_last+1
+      SEQ_LENGTH: 90 # cond + forecast
 
 PLANNER_CONFIG:
     NAME: EmptyPlanner
@@ -42,7 +49,7 @@ LOSS:
 OPTIMIZATION:
     NAME: ADAM
 
-    BATCH_SIZE_PER_GPU: 4
+    BATCH_SIZE_PER_GPU: 1
     NUM_EPOCHS: 200
     BASE_LR: 2.0e-05
     WARMUP_STEPS: 1000

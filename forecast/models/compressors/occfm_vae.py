@@ -50,30 +50,68 @@ class OccFmVAE(ModelTemplate):
         assert gt_occ.shape[1] == 1, "video input not supported now"
         gt_occ = gt_occ.long()[:, 0] if len(gt_occ.shape) == 5 else gt_occ.long()
 
+        # Safety check: clamp ground truth labels to valid range [0, num_classes-1]
+        # pred_occ has shape [B, H, W, D, NUM_CATE], so num_classes = pred_occ.shape[-1]
+        num_classes = pred_occ.shape[-1]
+        gt_occ = torch.clamp(gt_occ, 0, num_classes - 1)
+
         tb_dict, disp_dict = {}, {}
 
-        rec_loss = F.cross_entropy(pred_occ.permute(0, 4, 1, 2, 3), gt_occ, ignore_index=-100)
+        # Permute pred_occ to [B, C, H, W, D] for cross-entropy
+        pred_occ_permuted = pred_occ.permute(0, 4, 1, 2, 3)
+        
+        # Check for NaN or Inf in predictions
+        if torch.isnan(pred_occ_permuted).any() or torch.isinf(pred_occ_permuted).any():
+            print(f"Warning: NaN or Inf detected in predictions! NaN: {torch.isnan(pred_occ_permuted).sum()}, Inf: {torch.isinf(pred_occ_permuted).sum()}")
+            pred_occ_permuted = torch.nan_to_num(pred_occ_permuted, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        rec_loss = F.cross_entropy(pred_occ_permuted, gt_occ, ignore_index=-100)
+        
+        # Check for NaN in loss
+        if torch.isnan(rec_loss):
+            print(f"Warning: NaN in reconstruction loss! pred_occ shape: {pred_occ.shape}, gt_occ shape: {gt_occ.shape}, gt_occ range: [{gt_occ.min()}, {gt_occ.max()}]")
+            rec_loss = torch.tensor(0.0, device=rec_loss.device, requires_grad=True)
+        
         weighted_rec_loss = self.loss_weight['RECON_LOSS_WEIGHT'] * rec_loss
         tb_dict['weighted_rec_loss'] = weighted_rec_loss
 
-        # miou
-        pred_occ = pred_occ.permute(0, 4, 1, 2, 3).softmax(dim=1)
-        loss = lovasz_softmax(pred_occ, gt_occ)
+        # miou - use permuted version for consistency
+        pred_occ_softmax = pred_occ_permuted.softmax(dim=1)
+        loss = lovasz_softmax(pred_occ_softmax, gt_occ)
+        
+        # Check for NaN in lovasz loss
+        if torch.isnan(loss):
+            print(f"Warning: NaN in Lovasz loss!")
+            loss = torch.tensor(0.0, device=loss.device, requires_grad=True)
+        
         weighted_lova_loss = self.loss_weight['LOVASZ_LOSS_WEIGHT'] * loss
         tb_dict['weighted_lova_loss'] = weighted_lova_loss
 
         # KL divergence
         kl_loss = self.quantization.get_loss()
+        
+        # Check for NaN in KL loss
+        if torch.isnan(kl_loss):
+            print(f"Warning: NaN in KL loss!")
+            kl_loss = torch.tensor(0.0, device=kl_loss.device, requires_grad=True)
+        
         weighted_kl_loss = self.loss_weight['KL_DIVERGENCE_WEIGHT'] * kl_loss
         tb_dict['weighted_kl_loss'] = weighted_kl_loss
 
         loss = weighted_rec_loss + weighted_lova_loss + weighted_kl_loss
+        
+        # Final check for NaN in total loss
+        if torch.isnan(loss):
+            print(f"Warning: NaN in total loss! rec: {weighted_rec_loss.item()}, lovasz: {weighted_lova_loss.item()}, kl: {weighted_kl_loss.item()}")
+            loss = torch.tensor(0.0, device=loss.device, requires_grad=True)
+        
         tb_dict['loss'] = loss
 
-        disp_dict['pred_occ'] = torch.argmax(pred_occ.softmax(dim=1), 1).unsqueeze(1)
+        disp_dict['pred_occ'] = torch.argmax(pred_occ_softmax, 1).unsqueeze(1)
         disp_dict['gt_occ'] = gt_occ.unsqueeze(1)
         disp_dict['gt_path'] = batch_dict['paths']
-        disp_dict['trajectory'] = batch_dict['trajectory']
+        if 'trajectory' in batch_dict:
+            disp_dict['trajectory'] = batch_dict['trajectory']
 
         if batch_dict['mu'] is not None:
             disp_dict['mu'] = batch_dict['mu']

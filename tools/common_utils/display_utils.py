@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 from rich.table import Table
 from rich.align import Align
 from rich.panel import Panel
@@ -61,7 +62,7 @@ def setup_loggers():
     return progress, console
 
 
-def show_eval(avg_dict, console):
+def show_eval(avg_dict, console, output_dir=None):
     all_miou, all_iou = avg_dict['all_miou'], avg_dict['all_iou']
     time_avg = avg_dict['time']
     mean_miou, mean_iou = np.mean(all_miou), np.mean(all_iou)
@@ -72,6 +73,20 @@ def show_eval(avg_dict, console):
             extra_table.add_column(str(key), justify="center", style="bold white")
         extra_table.add_row(*[f"{v:.2f}" if isinstance(v, float) else str(v) for v in avg_dict['cate_miou'].values()])
         console.print(extra_table)
+        
+        # Save category mIoU to txt file if output_dir is provided
+        if output_dir is not None:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            txt_file = output_path / 'category_miou.txt'
+            with open(txt_file, 'w') as f:
+                f.write("mIoU on each category:\n")
+                f.write("=" * 50 + "\n")
+                for key, value in avg_dict['cate_miou'].items():
+                    f.write(f"{key}: {value:.2f}\n")
+                f.write("=" * 50 + "\n")
+                f.write(f"Mean mIoU: {mean_miou:.4f}\n")
+            console.print(f"[green]Category mIoU saved to: {txt_file}[/green]")
 
     summary_panels = [
         Panel.fit(f"[bold green]{mean_miou:.4f}[/bold green]", title="Mean mIoU", border_style="magenta"),

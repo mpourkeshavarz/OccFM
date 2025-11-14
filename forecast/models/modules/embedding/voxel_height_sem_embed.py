@@ -42,7 +42,12 @@ class VoxelHeightSemEmbed(nn.Module):
             return data_dict
 
         sem_occ = data_dict["semantic_occ"]
-        input = self.class_embeds(sem_occ.long())
+        # input = self.class_embeds(sem_occ.long())
+        # Clamp label ids to valid embedding range to avoid OOB on datasets with larger ids
+        sem_occ = sem_occ.long()
+        if sem_occ.max() >= self.cate_dim or sem_occ.min() < 0:
+            sem_occ = torch.clamp(sem_occ, 0, self.cate_dim - 1)
+        input = self.class_embeds(sem_occ)
         height_range = torch.arange(0, 16, device=input.device).long()
 
         if len(sem_occ.shape) == 4:

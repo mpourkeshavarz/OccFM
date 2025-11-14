@@ -1,14 +1,15 @@
 NAME: OccFmVAE
 
-GEN_TRAINING: False # Skip the VAE structure
+CACHE_MODE: False # Use for cache, in cfm used for skip encoder
 MU_SIGMA_CACHE: False
+GEN_TRAINING: False # Skip the VAE structure
 
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'loss'
 
 DATA_CONFIG:
-  _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
-  OCC_PATH: 'data/nuscenes'
+  _BASE_CONFIG_: tools/cfgs/dataset_configs/waymo_dataset_occ_only.yaml
+  # OCC_PATH: 'data/nuscenes'
   SEQUENCE_LENGTH: 1
   SEM_MODE: True
   ONLY_BG: False
@@ -20,7 +21,8 @@ DATA_CONFIG:
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
     EMBEDDING:
-      NUM_CATE: 18
+        NUM_CATE: 16  # robust upper bound; embedding clamps inputs
+
 LOSS:
   RECON_LOSS_WEIGHT: 10
   LOVASZ_LOSS_WEIGHT: 1
@@ -29,9 +31,12 @@ LOSS:
 OPTIMIZATION:
   NAME: ADAM
 
-  BATCH_SIZE_PER_GPU: 8
+  BATCH_SIZE_PER_GPU:   2
   NUM_EPOCHS: 100
   BASE_LR: 2.0e-05
   WARMUP_STEPS: 1000
   MIN_LR_RATIO: 0.2
   GRAD_NORM_CLIP: 5
+
+
+

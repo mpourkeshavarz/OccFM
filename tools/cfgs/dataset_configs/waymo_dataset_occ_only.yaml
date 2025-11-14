@@ -1,0 +1,21 @@
+DATASET: WaymoDatasetOccOnly
+DATA_PATH: 'data/waymo_perception_v1_4_0/Occupancy3D-Waymo'
+# Waymo Occ3D classes (0..15), with 15 = free
+# Classes 0-14: semantic classes, Class 15: free (empty/unoccupied)
+LABEL_NAME: ['TYPE_GENERALOBJECT', 'TYPE_VEHICLE', 'TYPE_PEDESTRIAN', 'TYPE_SIGN', 'TYPE_CYCLIST', 'TYPE_TRAFFIC_LIGHT', 'TYPE_POLE',
+  'TYPE_CONSTRUCTION_CONE', 'TYPE_BICYCLE', 'TYPE_MOTORCYCLE', 'TYPE_BUILDING', 'TYPE_VEGETATION', 'TYPE_TREE_TRUNK', 'TYPE_ROAD', 'TYPE_WALKABLE', 'free']
+USE_VOXEL_04: True  # use *_04.npz (200x200x16)
+
+# Waymo Occupancy3D label files use the key 'voxel_label' for semantics
+# The dataset class exposes npz_label_key/free_label_id/num_classes to guide evaluation code.
+
+# Ego trajectory construction options:
+# TRAJECTORY_MODE: 'pkl'  # Options: 'pkl', 'waymo', 'frame_based', 'zero'
+#   - 'pkl': Load from waymo_infos_*.pkl files (default, recommended)
+#   - 'waymo': Load from original Waymo tfrecord files (requires WAYMO_TFRECORD_PATH)
+#   - 'frame_based': Construct from frame sequence (assumes forward motion)
+#   - 'zero': Return zero trajectories (placeholder)
+# TRAJECTORY_LENGTH: 4  # Number of future frames for trajectory (default: 4)
+# WAYMO_TFRECORD_PATH: null  # Path to Waymo Open Dataset tfrecord files (optional, for 'waymo' mode)
+
+

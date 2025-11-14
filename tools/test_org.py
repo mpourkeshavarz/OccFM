@@ -102,18 +102,8 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                 if eval_iou:
                     if 'gt_occ' not in val_disp_dict:
                         all_seq_gtocc_path = all_paths[0][cond_length:cond_length + iou_eval_length]
-                        # Load ground truth - use same key as dataset (voxel_label) or fallback to semantics
-                        npz_label_key = getattr(val_loader.dataset, 'npz_label_key', 'voxel_label')
-                        gt_occ_list = []
-                        for x in all_seq_gtocc_path:
-                            file_path = x[0] if isinstance(x, list) else x
-                            labels = np.load(file_path)[npz_label_key].copy()
-                            # Remap free label from 23 (ground truth format) to 15 (model format)
-                            free_label_id = getattr(val_loader.dataset, 'free_label_id', 15)
-                            if free_label_id == 15:
-                                labels[labels == 23] = 15
-                            gt_occ_list.append(labels)
-                        gt_occ = torch.as_tensor(np.stack(gt_occ_list)).unsqueeze(0)
+                        gt_occ = torch.as_tensor(np.stack([np.load(x[0])['semantics'] if isinstance(x, list)
+                                                           else np.load(x)['semantics'] for x in all_seq_gtocc_path])).unsqueeze(0)
                     else:
                         gt_occ = val_disp_dict['gt_occ'].detach().cpu()
 
@@ -123,12 +113,10 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         mIoU_counter._after_step(pred_occ, gt_occ)
 
                         # assume empty is the last label
-                        # Use free_label_id if available, otherwise len(label_name) - 1
-                        free_label_id = getattr(val_loader.dataset, 'free_label_id', len(label_name) - 1)
-                        pred_occ[pred_occ != free_label_id] = 1
-                        pred_occ[pred_occ == free_label_id] = 0
-                        gt_occ[gt_occ != free_label_id] = 1
-                        gt_occ[gt_occ == free_label_id] = 0
+                        pred_occ[pred_occ != len(label_name)] = 1
+                        pred_occ[pred_occ == len(label_name)] = 0
+                        gt_occ[gt_occ != len(label_name)] = 1
+                        gt_occ[gt_occ == len(label_name)] = 0
 
                     IoU_counter._after_step(pred_occ, gt_occ)
                     #all_miou, cate_miou = mIoU_counter._after_epoch()
@@ -139,18 +127,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
 
             if len(pred_occs_all) > 0 and fid_eval_path is not None:
                 pred_occs_all = torch.concat(pred_occs_all, dim=1).squeeze(0).numpy().astype(np.uint8)
-                # Load ground truth - use same key as dataset (voxel_label) or fallback to semantics
-                npz_label_key = getattr(val_loader.dataset, 'npz_label_key', 'voxel_label')
-                gt_occ_list = []
-                for x in all_paths[0][cond_length:]:
-                    file_path = x[0] if isinstance(x, list) else x
-                    labels = np.load(file_path)[npz_label_key].copy()
-                    # Remap free label from 23 (ground truth format) to 15 (model format)
-                    free_label_id = getattr(val_loader.dataset, 'free_label_id', 15)
-                    if free_label_id == 15:
-                        labels[labels == 23] = 15
-                    gt_occ_list.append(labels)
-                gt_occ_all = np.stack(gt_occ_list)
+                gt_occ_all = np.stack([np.load(x[0])['semantics'] for x in all_paths[0][cond_length:]])
                 np.save(fid_eval_path + f'/gt_{str(batch_idx).zfill(4)}.npy', gt_occ_all)
                 np.save(fid_eval_path + f'/pred_{str(batch_idx).zfill(4)}.npy', pred_occs_all)
 

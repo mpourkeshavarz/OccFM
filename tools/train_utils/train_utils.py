@@ -125,7 +125,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
             if val_loader is not None and current_epoch % eval_interval == 0:
 
                 eval_model = ema_model if ema_model is not None else model
-                teach_forcing = eval_model.module.teach_forcing
+                teach_forcing = getattr(eval_model.module, 'teach_forcing', False)
 
                 val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, teach_forcing=teach_forcing,
                                          use_amp=use_amp, rank=rank, is_main_process=is_main_process)

@@ -1,5 +1,6 @@
 from .dataset import DatasetTemplate
 from .nuscenes_dataset import NuScenesDataset
+from .waymo_dataset_occ_only import WaymoDatasetOccOnly
 from functools import partial
 
 from forecast.utils import common_utils
@@ -10,6 +11,8 @@ from torch.utils.data.distributed import DistributedSampler
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
     'NuScenesDataset': NuScenesDataset,
+    'WaymoDatasetOccOnly': WaymoDatasetOccOnly,
+
 
 }
 

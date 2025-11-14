@@ -189,7 +189,7 @@ if __name__ == '__main__':
                                  fid_eval_path=args.fid_eval_path)
 
         if is_main_process:
-            show_eval(val_avg_loss, console)
+            show_eval(val_avg_loss, console, output_dir=output_dir)
 
         cache_mu_sigma = args.mu_sigma_cache or cfg.get("MU_SIGMA_CACHE", False)
 
