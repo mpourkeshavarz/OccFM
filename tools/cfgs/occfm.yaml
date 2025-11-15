@@ -4,14 +4,25 @@ GEN_TRAINING: True # Skip the VAE structure
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
 
+# Training (non-autoregressive)
+# No AUTO_REG setting → defaults to False
+# Predicts all 80 frames in one forward pass
+# Inference (non-autoregressive)
+# ROLL_OUT_STEP: 80 and ROLL_OUT_LENGTH: 80
+# iter_num = ROLL_OUT_LENGTH // ROLL_OUT_STEP = 80 // 80 = 1
+# Only 1 iteration, predicting all 80 frames at once
+
+
+
+
 DATA_CONFIG:
     # _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
     _BASE_CONFIG_: tools/cfgs/dataset_configs/waymo_dataset_occ_only.yaml
     # PICKLE_PATH: Optional - if provided, loads cached VAE latents; if not, encodes semantic_occ on-the-fly
-    # Example: PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_sem_occ_training.pkl',
-    #                       'test': './data/waymo_latent_vae/x16/waymo_sem_occ_validation.pkl'}
-    # PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_sem_occ_training.pkl',
-    #              'test': './data/waymo_latent_vae/x16/waymo_sem_occ_validation.pkl'}
+    # Example: PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
+    #                       'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
+    PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
+                  'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
     # OCC_PATH: 'data/nuscenes'
     ONLY_BG: False
     SEM_MODE: True
@@ -25,7 +36,7 @@ DATA_CONFIG:
 
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
-    PRETRAIN_WEIGHT: logs/occfm_vae_occ_only_waymo/train_new/ckpt/epoch=000001.ckpt
+    PRETRAIN_WEIGHT: logs/occfm_vae_occ_only_waymo/train_new/ckpt/epoch=000002.ckpt
     EMBEDDING:
         NUM_CATE: 16  # Waymo has 16 classes
 
@@ -49,9 +60,10 @@ LOSS:
 OPTIMIZATION:
     NAME: ADAM
 
-    BATCH_SIZE_PER_GPU: 1
+    BATCH_SIZE_PER_GPU: 2
     NUM_EPOCHS: 200
     BASE_LR: 2.0e-05
     WARMUP_STEPS: 1000
-    MIN_LR_RATIO: 0.2
+    MIN_LR_RATIO: 0.
     GRAD_NORM_CLIP: 5
+    CKPT_SAVE_INTERVAL_BATCHES: 100  # Optional: save checkpoint every N batches (in addition to epoch-based checkpoints)

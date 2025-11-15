@@ -72,7 +72,8 @@ def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimize
 
 def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_epoch, optim_cfg,
                 model_func, ckpt_path, console, progress, ema_model=None, wandb_logger=None,
-                eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None):
+                eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None,
+                ckpt_save_interval_batches=None):
     # DDP after load parameters
     # encoder/decoder param also include but no grad
     model_update_func = auto_regressive_training if getattr(model, 'auto_regressive', False) else single_loop_training
@@ -111,6 +112,21 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                     disp_table = format_disp_dict(tb_dict)
                     live.update(Group(progress, disp_table))
                     wandb_log_train_step(model.module.global_step, epoch, tb_dict) if wandb_logger is not None else None
+                    
+                    # Save checkpoint after N batches if configured
+                    if ckpt_save_interval_batches is not None and (batch_idx + 1) % ckpt_save_interval_batches == 0:
+                        current_epoch = epoch + 1
+                        ckpt_file = f'epoch={str(current_epoch).zfill(6)}_batch={str(batch_idx + 1).zfill(6)}.ckpt'
+                        ckpt_path_full = ckpt_path + ckpt_file
+                        torch.save({
+                            'state_dict': model.state_dict(),
+                            'ema_model': ema_model.state_dict() if ema_model is not None else None,
+                            'optimizer_states': [optimizer.state_dict()],
+                            'epoch': current_epoch,
+                            'scaler_state_dict': scaler.state_dict() if use_amp else None,
+                            'lr_scheduler': lr_scheduler.state_dict()
+                        }, ckpt_path_full)
+                        console.print(f"[green]💾  Saved batch checkpoint:[/] {ckpt_file}")
 
                 dist.barrier()
 

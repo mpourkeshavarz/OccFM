@@ -39,11 +39,13 @@ class WaymoDatasetOccOnly(DatasetTemplate):
         
         # Load Waymo info pickle file if available
         # Note: Waymo pickle files are flat lists, not organized by scenes like NuScenes
+        # SKIP loading waymo_infos if pickle_path is provided (trajectories are already in pickle)
         self.infos_list = None  # Flat list of all frames
         self.infos_by_scene = None  # Dict: scene_id -> list of frame indices in infos_list
+        skip_waymo_infos = gen_training and dataset_cfg.get('pickle_path', None) is not None
         info_pkl_name = 'waymo_infos_train.pkl' if training else 'waymo_infos_val.pkl'
         info_pkl_path = os.path.join(dataset_cfg['data_path'], info_pkl_name)
-        if os.path.exists(info_pkl_path):
+        if not skip_waymo_infos and os.path.exists(info_pkl_path):
             try:
                 with open(info_pkl_path, 'rb') as f:
                     pkl_data = pickle.load(f)
@@ -168,8 +170,13 @@ class WaymoDatasetOccOnly(DatasetTemplate):
             # If pickle_path is provided, load cached latents; otherwise encode on-the-fly in model
             if dataset_cfg.get('pickle_path', None) is not None:
                 path = dataset_cfg['pickle_path']['train' if training else 'test']
+                
+                # Load pickle file - this contains both latents and trajectories
+                # Memory optimization: load once and reuse
+                print(f"Loading cached latents from {path}...")
                 with open(path, 'rb') as f:
                     cached_files = pickle.load(f)
+                print(f"Loaded {len(cached_files)} cached samples")
                 
                 # Extract paths, trajectories, and x_sampled from cached files
                 gt_path = [x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path'] for x in cached_files]
@@ -198,6 +205,7 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                         self.all_samples.append(full_path)
                 
                 # Match cached files to all_samples by path
+                # Use dictionaries for O(1) lookup instead of lists for better memory efficiency
                 self.traj = []
                 self.x_sampled = []
                 matched_indices = []
@@ -207,6 +215,7 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                     # Normalize path for matching
                     if cached_path in path_to_idx:
                         matched_indices.append(path_to_idx[cached_path])
+                        # Trajectories and latents are already in pickle, use them directly
                         self.traj.append(cached_item['gt_trajs'])
                         self.x_sampled.append(cached_item['x_sampled'])
                     else:
@@ -233,6 +242,11 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                         reordered_x_sampled[new_idx] = self.x_sampled[orig_idx]
                     self.traj = reordered_traj
                     self.x_sampled = reordered_x_sampled
+                else:
+                    print(f"Warning: Matched {len(matched_indices)} samples but expected {len(self.all_samples)}")
+                
+                # Clear cached_files to free memory (data is now in self.traj and self.x_sampled)
+                del cached_files
                 
                 # Select valid indices
                 self.select_valid(training, gen_test=getattr(dataset_cfg, 'eval_mode', False), vae_training=False)
@@ -331,21 +345,26 @@ class WaymoDatasetOccOnly(DatasetTemplate):
         # Try loading from pickle file first (preferred method)
         if self.trajectory_mode == 'pkl' and (self.infos_list is not None or self.infos is not None):
             self._load_trajectories_from_pkl()
-            return
-        
         # Fallback to tfrecord files
-        if self.trajectory_mode == 'waymo' and self.waymo_tfrecord_path:
+        elif self.trajectory_mode == 'waymo' and self.waymo_tfrecord_path:
             if not WAYMO_AVAILABLE:
                 print("Warning: waymo_open_dataset not available. Falling back to frame_based trajectory.")
                 self.trajectory_mode = 'frame_based'
+                # Fall through to frame-based construction
             else:
                 self._load_trajectories_from_waymo()
-                return
         
-        # Default: construct frame-based trajectories
-        for i in range(len(self.all_samples)):
+        # Default: construct frame-based trajectories (or fill in missing ones)
+        # Ensure we have a trajectory for every sample
+        while len(self.traj) < len(self.all_samples):
+            i = len(self.traj)
             traj = self._get_trajectory_for_frame(i)
             self.traj.append(traj)
+        
+        # Validate that we have trajectories for all samples
+        if len(self.traj) != len(self.all_samples):
+            raise RuntimeError(f"Trajectory construction failed: expected {len(self.all_samples)} trajectories, "
+                             f"but got {len(self.traj)}")
 
     def _load_trajectories_from_pkl(self):
         """
@@ -409,6 +428,7 @@ class WaymoDatasetOccOnly(DatasetTemplate):
             # Try to find matching pickle item
             # Strategy 1: Match by scene order and frame index
             pickle_idx = None
+            pickle_scene_indices = None
             scene_frames = self.scene_frame_mapping.get(scene_id, [])
             local_frame_idx = scene_frames.index(i) if i in scene_frames else -1
             
@@ -420,12 +440,12 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                 pickle_scene_key = f"scene_{scene_idx:03d}"  # e.g., "scene_000"
                 if pickle_scene_key in self.infos_by_scene:
                     pickle_scene_indices = self.infos_by_scene[pickle_scene_key]
-                
-                if local_frame_idx >= 0 and local_frame_idx < len(pickle_scene_indices):
-                    pickle_idx = pickle_scene_indices[local_frame_idx]
+                    
+                    if local_frame_idx >= 0 and local_frame_idx < len(pickle_scene_indices):
+                        pickle_idx = pickle_scene_indices[local_frame_idx]
             
             # Extract pose and construct trajectory
-            if pickle_idx is not None and pickle_idx < len(self.infos_list):
+            if pickle_idx is not None and pickle_idx < len(self.infos_list) and pickle_scene_indices is not None:
                 frame_info = self.infos_list[pickle_idx]
                 
                 # Extract ego pose from 4x4 transformation matrix
@@ -735,13 +755,20 @@ class WaymoDatasetOccOnly(DatasetTemplate):
 
     def __getitem__(self, idx):
         sample_idx = self.valid_idx[idx]
-        paths = self.all_samples[sample_idx: sample_idx + self.safe_length]
+        end_idx = min(sample_idx + self.safe_length, len(self.all_samples))
+        paths = self.all_samples[sample_idx: end_idx]
         data_dict = {
             'paths': paths
         }
         
         # Add trajectory: concatenate trajectories for all frames in the sequence
-        trajectories = [self.traj[i] for i in range(sample_idx, sample_idx + self.safe_length)]
+        # Ensure we don't access beyond the length of self.traj
+        traj_end_idx = min(sample_idx + self.safe_length, len(self.traj))
+        if traj_end_idx <= sample_idx:
+            raise IndexError(f"Trajectory list length ({len(self.traj)}) is less than required. "
+                           f"sample_idx={sample_idx}, safe_length={self.safe_length}, "
+                           f"all_samples length={len(self.all_samples)}")
+        trajectories = [self.traj[i] for i in range(sample_idx, traj_end_idx)]
         data_dict['trajectory'] = np.concatenate(trajectories, axis=0)
         
         if self.gen_training:

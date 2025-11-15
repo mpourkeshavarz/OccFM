@@ -121,16 +121,47 @@ class ModelTemplate(nn.Module):
         self.load_state_dict(new_param_dict)
         return pl_sd
 
-    def recover_compressor(self, weight_path):
+    def recover_compressor(self, weight_path, use_cached_latents=False):
+        """
+        Load compressor weights from checkpoint.
+        
+        Args:
+            weight_path: Path to VAE checkpoint
+            use_cached_latents: If True, only load decoder + embedding (skip encoder + quantization)
+                               If False, load all compressor weights (for on-the-fly encoding)
+        """
         compressor_weight = torch.load(weight_path, map_location="cpu", weights_only=True)
         key = list(compressor_weight['state_dict'].keys())[0]
         new_param_dict = common_utils.remove_module_prefix_from_ddp(compressor_weight['state_dict']) \
             if key.startswith('module') else compressor_weight['state_dict']
-        self.load_state_dict(new_param_dict, strict=False)
-        # Freeze compressor
+        
+        if use_cached_latents:
+            # Only load decoder + embedding weights (skip encoder + quantization to save memory)
+            filtered_param_dict = OrderedDict()
+            for k, v in new_param_dict.items():
+                # Load decoder and embedding weights
+                if k.startswith('decoder.') or k.startswith('embedding.'):
+                    filtered_param_dict[k] = v
+                # Skip encoder and quantization weights
+                elif k.startswith('encoder.') or k.startswith('quantization.'):
+                    continue
+                else:
+                    # Keep other weights (transition_model, planner, etc.)
+                    filtered_param_dict[k] = v
+            
+            print(f"Loading only decoder + embedding weights (skipping encoder + quantization) since cached latents are used.")
+            self.load_state_dict(filtered_param_dict, strict=False)
+        else:
+            # Load all compressor weights (needed for on-the-fly encoding)
+            self.load_state_dict(new_param_dict, strict=False)
+        
+        # Freeze compressor modules that are loaded
         for module in self.compressor_topology:
-            freeze_module = getattr(self, '%s' % module)
-            freeze_module.requires_grad_(False)
+            freeze_module = getattr(self, '%s' % module, None)
+            if freeze_module is not None:
+                # Only freeze if module has parameters (weights were loaded)
+                if len(list(freeze_module.parameters())) > 0:
+                    freeze_module.requires_grad_(False)
 
         return compressor_weight
 

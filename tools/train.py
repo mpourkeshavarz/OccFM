@@ -26,6 +26,7 @@ from tools.common_utils.logging import create_wandb_logger
 
 from scripts.cache_vae import cache_model
 
+
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
@@ -159,7 +160,9 @@ if __name__ == '__main__':
 
     else:
         # If from scratch, recover data compressor parameters, then build ema model
-        _ = model.recover_compressor(cfg.COMPRESSOR_CONFIG.PRETRAIN_WEIGHT) if hasattr(model, 'transition_model') else None
+        # Check if pickle_path exists - if so, only load decoder+embedding (skip encoder+quantization)
+        use_cached_latents = cfg.DATA_CONFIG.get('pickle_path', None) is not None
+        _ = model.recover_compressor(cfg.COMPRESSOR_CONFIG.PRETRAIN_WEIGHT, use_cached_latents=use_cached_latents) if hasattr(model, 'transition_model') else None
         scheduler = build_scheduler(optimizer, cfg.OPTIMIZATION, training_length_ep=len(train_loader))
 
         train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, rank=rank,
