@@ -171,79 +171,53 @@ class WaymoDatasetOccOnly(DatasetTemplate):
             if dataset_cfg.get('pickle_path', None) is not None:
                 path = dataset_cfg['pickle_path']['train' if training else 'test']
                 
-                # Load pickle file - this contains both latents and trajectories
-                # Memory optimization: load once and reuse
-                print(f"Loading cached latents from {path}...")
-                with open(path, 'rb') as f:
-                    cached_files = pickle.load(f)
-                print(f"Loaded {len(cached_files)} cached samples")
+                # Check if this is a sharded format (index file)
+                # Sharded format has a special structure: {'num_shards': N, 'shard_files': [...], 'total_samples': M}
+                # Regular format is a list of dicts: [{'x_sampled': ..., 'gt_path': ..., 'gt_trajs': ...}, ...]
                 
-                # Extract paths, trajectories, and x_sampled from cached files
+                # Load the file to check format
+                with open(path, 'rb') as f:
+                    loaded_data = pickle.load(f)
+                
+                # Check if it's a shard index file (dict with 'num_shards' key)
+                if isinstance(loaded_data, dict) and 'num_shards' in loaded_data:
+                    # Sharded format: load the appropriate shard based on rank
+                    shard_info = loaded_data
+                    
+                    # Get rank from environment (for distributed training)
+                    # Fallback to 0 if not in distributed mode
+                    try:
+                        rank = int(os.environ.get('RANK', 0))
+                    except (ValueError, TypeError):
+                        rank = 0
+                    
+                    # Determine which shard this rank should load
+                    num_shards = shard_info['num_shards']
+                    shard_idx = rank % num_shards
+                    
+                    # Load the appropriate shard file
+                    shard_file = shard_info['shard_files'][shard_idx]
+                    shard_path = os.path.join(os.path.dirname(path), shard_file)
+                    
+                    print(f"Loading sharded latents (rank {rank}, shard {shard_idx}/{num_shards}) from {shard_path}...")
+                    with open(shard_path, 'rb') as f:
+                        cached_files = pickle.load(f)
+                    print(f"Loaded {len(cached_files)} cached samples from shard {shard_idx}")
+                else:
+                    # Regular pickle format (list of dicts)
+                    cached_files = loaded_data
+                    print(f"Loading cached latents from {path}...")
+                    print(f"Loaded {len(cached_files)} cached samples")
+                
+                # Extract paths from cached files - normalize to handle both list and string formats
                 gt_path = [x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path'] for x in cached_files]
                 
-                # Match cached files to .npz structure by path
-                # Waymo paths are like: .../training/scene_000/frame_000_04.npz
-                # We need to match them to our all_samples structure
-                split_dirname = 'training' if training else 'validation'
-                base_path = dataset_cfg['data_path']
-                split_path = os.path.join(base_path, split_dirname)
-                assert os.path.isdir(split_path), f"Split path not found: {split_path}"
-                
-                # Build mapping from path to index
-                scene_ids = sorted([d for d in os.listdir(split_path) if os.path.isdir(os.path.join(split_path, d))])
-                path_to_idx = {}
-                for scene_id in scene_ids:
-                    scene_dir = os.path.join(split_path, scene_id)
-                    if self.use_voxel_04:
-                        frame_files = sorted([f for f in os.listdir(scene_dir) if f.endswith('_04.npz')])
-                    else:
-                        frame_files = sorted([f for f in os.listdir(scene_dir) if f.endswith('.npz') and not f.endswith('_04.npz')])
-                    
-                    for f in frame_files:
-                        full_path = os.path.join(scene_dir, f)
-                        path_to_idx[full_path] = len(self.all_samples)
-                        self.all_samples.append(full_path)
-                
-                # Match cached files to all_samples by path
-                # Use dictionaries for O(1) lookup instead of lists for better memory efficiency
-                self.traj = []
-                self.x_sampled = []
-                matched_indices = []
-                
-                for cached_item in cached_files:
-                    cached_path = cached_item['gt_path'][0] if isinstance(cached_item['gt_path'], list) else cached_item['gt_path']
-                    # Normalize path for matching
-                    if cached_path in path_to_idx:
-                        matched_indices.append(path_to_idx[cached_path])
-                        # Trajectories and latents are already in pickle, use them directly
-                        self.traj.append(cached_item['gt_trajs'])
-                        self.x_sampled.append(cached_item['x_sampled'])
-                    else:
-                        # Try to match by filename
-                        cached_filename = os.path.basename(cached_path)
-                        matched = False
-                        for full_path, idx in path_to_idx.items():
-                            if os.path.basename(full_path) == cached_filename:
-                                matched_indices.append(idx)
-                                self.traj.append(cached_item['gt_trajs'])
-                                self.x_sampled.append(cached_item['x_sampled'])
-                                matched = True
-                                break
-                        if not matched:
-                            print(f"Warning: Could not match cached path: {cached_path}")
-                
-                # Reorder to match all_samples order
-                if len(matched_indices) == len(self.all_samples):
-                    # Reorder traj and x_sampled to match all_samples order
-                    reordered_traj = [None] * len(self.all_samples)
-                    reordered_x_sampled = [None] * len(self.all_samples)
-                    for orig_idx, new_idx in enumerate(matched_indices):
-                        reordered_traj[new_idx] = self.traj[orig_idx]
-                        reordered_x_sampled[new_idx] = self.x_sampled[orig_idx]
-                    self.traj = reordered_traj
-                    self.x_sampled = reordered_x_sampled
-                else:
-                    print(f"Warning: Matched {len(matched_indices)} samples but expected {len(self.all_samples)}")
+                # When pickle_path is provided, all data (latents, trajectories, paths) comes from pickle
+                # No need to scan directories or load other files - use pickle data directly
+                self.all_samples = gt_path.copy()
+                # gt_trajs is now [2] - displacement from frame t to frame t+1: [dx, dy]
+                self.traj = [x['gt_trajs'] for x in cached_files]
+                self.x_sampled = [x['x_sampled'] for x in cached_files]
                 
                 # Clear cached_files to free memory (data is now in self.traj and self.x_sampled)
                 del cached_files
@@ -761,15 +735,19 @@ class WaymoDatasetOccOnly(DatasetTemplate):
             'paths': paths
         }
         
-        # Add trajectory: concatenate trajectories for all frames in the sequence
-        # Ensure we don't access beyond the length of self.traj
+        # Add trajectory: stack displacements for all frames in the sequence
+        # Each self.traj[i] is [2] - displacement from frame i to frame i+1: [dx, dy]
+        # For a sequence of 90 frames, we'll have 90 displacements
+        # These displacements represent relative positions between consecutive frames
         traj_end_idx = min(sample_idx + self.safe_length, len(self.traj))
         if traj_end_idx <= sample_idx:
             raise IndexError(f"Trajectory list length ({len(self.traj)}) is less than required. "
                            f"sample_idx={sample_idx}, safe_length={self.safe_length}, "
                            f"all_samples length={len(self.all_samples)}")
+        # Stack displacements: [safe_length, 2] - one displacement per frame
         trajectories = [self.traj[i] for i in range(sample_idx, traj_end_idx)]
-        data_dict['trajectory'] = np.concatenate(trajectories, axis=0)
+        # Each trajectory is [2] (displacement), so stacking gives [safe_length, 2]
+        data_dict['trajectory'] = np.stack(trajectories, axis=0)  # [safe_length, 2]
         
         if self.gen_training:
             # For OccFM training: check if we have cached x_sampled or need to encode on-the-fly

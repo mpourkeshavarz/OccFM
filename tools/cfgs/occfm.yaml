@@ -21,8 +21,11 @@ DATA_CONFIG:
     # PICKLE_PATH: Optional - if provided, loads cached VAE latents; if not, encodes semantic_occ on-the-fly
     # Example: PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
     #                       'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
-    PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
-                  'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
+    # PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
+    #               'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
+    PICKLE_PATH:
+    train: './data/waymo_latent_vae/x16/waymo_latent_train_shards.pkl'
+    test: './data/waymo_latent_vae/x16/waymo_latent_val_shards.pkl'              
     # OCC_PATH: 'data/nuscenes'
     ONLY_BG: False
     SEM_MODE: True
