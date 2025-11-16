@@ -40,8 +40,9 @@ def check_and_balance_dataset_sizes(dataset, rank, world_size, training=True):
     dataset_size = len(dataset)
     
     # Gather sizes from all ranks
-    # Use CPU tensor for all_gather to avoid device issues
-    size_tensor = torch.tensor([dataset_size], dtype=torch.long)
+    # NCCL backend requires CUDA tensors, so we need to use the GPU
+    device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
+    size_tensor = torch.tensor([dataset_size], dtype=torch.long, device=device)
     size_list = [torch.zeros_like(size_tensor) for _ in range(world_size)]
     dist.all_gather(size_list, size_tensor)
     
