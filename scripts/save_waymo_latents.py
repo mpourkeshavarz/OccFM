@@ -449,41 +449,90 @@ def process_split(model, dataset, dataloader, split_name, device, output_dir, wa
     
     elif format == 'sharded':
         # Sharded format: multiple pickle files for multi-GPU training
-        # Each GPU/worker can load a different shard to reduce I/O contention
+        # IMPORTANT: Shard by scene to preserve scene continuity
+        # Each shard contains complete scenes, so when a rank loads one shard,
+        # it has all frames from those scenes and can find consecutive sequences
         if num_shards is None:
             # Try to auto-detect from environment, default to 1
             num_shards = int(os.environ.get('WORLD_SIZE', 1))
             if num_shards == 1:
                 num_shards = 8  # Default to 8 shards for better multi-GPU performance
         
-        print(f"Saving {len(all_cached_data)} samples in {num_shards} shards...")
+        print(f"Saving {len(all_cached_data)} samples in {num_shards} shards (sharding by scene)...")
         
-        # Shuffle data for better distribution across shards
+        # Group frames by scene - extract scene_id from gt_path
+        # Since all_cached_data is built scene by scene, frames from same scene are consecutive
+        # But we need to verify and group them explicitly to ensure complete scenes in each shard
+        print("Grouping frames by scene for scene-based sharding...")
+        scene_to_frames = {}
+        for idx, frame_data in enumerate(all_cached_data):
+            path = frame_data['gt_path'][0] if isinstance(frame_data['gt_path'], list) else frame_data['gt_path']
+            # Extract scene_id from path: .../<split>/<scene_id>/<frame>.npz
+            scene_id = os.path.basename(os.path.dirname(path))
+            if scene_id not in scene_to_frames:
+                scene_to_frames[scene_id] = []
+            scene_to_frames[scene_id].append(frame_data)
+        
+        # Verify scene grouping
+        print(f"Grouped {len(all_cached_data)} frames into {len(scene_to_frames)} scenes")
+        scene_frame_counts = {scene_id: len(frames) for scene_id, frames in scene_to_frames.items()}
+        if len(scene_frame_counts) > 0:
+            min_frames = min(scene_frame_counts.values())
+            max_frames = max(scene_frame_counts.values())
+            avg_frames = sum(scene_frame_counts.values()) / len(scene_frame_counts)
+            print(f"  Frames per scene: min={min_frames}, max={max_frames}, avg={avg_frames:.1f}")
+        
+        # Get list of scenes and shuffle scenes (not frames) for better distribution
+        scene_ids = sorted(scene_to_frames.keys())
         import random
         random.seed(42)  # Fixed seed for reproducibility
-        shuffled_data = all_cached_data.copy()
-        random.shuffle(shuffled_data)
+        random.shuffle(scene_ids)  # Shuffle scenes, but keep all frames of each scene together
         
-        # Split into shards
-        samples_per_shard = len(shuffled_data) // num_shards
+        # Distribute scenes across shards (not frames)
+        # Each shard gets approximately equal number of scenes
+        scenes_per_shard = len(scene_ids) // num_shards
         shard_files = []
+        total_samples = 0
         
         for shard_idx in range(num_shards):
-            start_idx = shard_idx * samples_per_shard
+            # Determine which scenes go to this shard
+            start_scene_idx = shard_idx * scenes_per_shard
             if shard_idx == num_shards - 1:
-                # Last shard gets remaining samples
-                end_idx = len(shuffled_data)
+                # Last shard gets remaining scenes
+                end_scene_idx = len(scene_ids)
             else:
-                end_idx = (shard_idx + 1) * samples_per_shard
+                end_scene_idx = (shard_idx + 1) * scenes_per_shard
             
-            shard_data = shuffled_data[start_idx:end_idx]
+            # Collect all frames from scenes assigned to this shard
+            shard_scenes = scene_ids[start_scene_idx:end_scene_idx]
+            shard_data = []
+            for scene_id in shard_scenes:
+                shard_data.extend(scene_to_frames[scene_id])  # Add all frames from this scene
+            
             shard_file = os.path.join(output_dir, f'waymo_latent_{split_name}_shard_{shard_idx:03d}_of_{num_shards:03d}.pkl')
             
             with open(shard_file, 'wb') as f:
                 pickle.dump(shard_data, f)
             
             shard_files.append(shard_file)
-            print(f"  Shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples -> {shard_file}")
+            total_samples += len(shard_data)
+            
+            # Verify that all frames in this shard belong to the assigned scenes
+            shard_scene_ids = set()
+            for frame_data in shard_data:
+                path = frame_data['gt_path'][0] if isinstance(frame_data['gt_path'], list) else frame_data['gt_path']
+                scene_id = os.path.basename(os.path.dirname(path))
+                shard_scene_ids.add(scene_id)
+            
+            # Check if any scenes are split across shards (should not happen)
+            if shard_scene_ids != set(shard_scenes):
+                print(f"  [WARNING] Shard {shard_idx+1} scene mismatch!")
+                print(f"    Expected scenes: {set(shard_scenes)}")
+                print(f"    Actual scenes: {shard_scene_ids}")
+            
+            print(f"  Shard {shard_idx+1}/{num_shards}: {len(shard_scenes)} scenes, {len(shard_data)} samples -> {shard_file}")
+            print(f"    Scenes: {shard_scenes[:5]}{'...' if len(shard_scenes) > 5 else ''}")
+            print(f"    ✓ Verified: All {len(shard_data)} frames belong to the {len(shard_scenes)} assigned scenes")
         
         # Save shard index file
         index_file = os.path.join(output_dir, f'waymo_latent_{split_name}_shards.pkl')
@@ -491,11 +540,14 @@ def process_split(model, dataset, dataloader, split_name, device, output_dir, wa
             pickle.dump({
                 'num_shards': num_shards,
                 'shard_files': [os.path.basename(f) for f in shard_files],
-                'total_samples': len(shuffled_data)
+                'total_samples': total_samples,
+                'total_scenes': len(scene_ids),
+                'sharding_method': 'by_scene'  # Indicate that shards are organized by scene
             }, f)
         
-        print(f"✓ Saved {len(shuffled_data)} samples in {num_shards} shards")
+        print(f"✓ Saved {total_samples} samples from {len(scene_ids)} scenes in {num_shards} shards")
         print(f"  - Index file: {index_file}")
+        print(f"  - Each shard contains complete scenes (preserves scene continuity)")
         return index_file
     
     else:

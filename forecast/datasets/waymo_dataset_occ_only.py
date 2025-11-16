@@ -42,7 +42,21 @@ class WaymoDatasetOccOnly(DatasetTemplate):
         # SKIP loading waymo_infos if pickle_path is provided (trajectories are already in pickle)
         self.infos_list = None  # Flat list of all frames
         self.infos_by_scene = None  # Dict: scene_id -> list of frame indices in infos_list
-        skip_waymo_infos = gen_training and dataset_cfg.get('pickle_path', None) is not None
+        
+        # Check if we should skip loading waymo_infos (when using cached latents)
+        # When pickle_path is provided, trajectories are already in the cached pickle files
+        pickle_path_cfg = dataset_cfg.get('pickle_path', None)
+        has_pickle_path = pickle_path_cfg is not None and isinstance(pickle_path_cfg, dict)
+        if has_pickle_path:
+            split_key = 'train' if training else 'test'
+            has_pickle_path = split_key in pickle_path_cfg and pickle_path_cfg[split_key] is not None
+        
+        skip_waymo_infos = gen_training and has_pickle_path
+        
+        if skip_waymo_infos:
+            split_key = 'train' if training else 'test'
+            print(f"Skipping waymo_infos loading (using cached latents from pickle_path: {pickle_path_cfg[split_key]})")
+        
         info_pkl_name = 'waymo_infos_train.pkl' if training else 'waymo_infos_val.pkl'
         info_pkl_path = os.path.join(dataset_cfg['data_path'], info_pkl_name)
         if not skip_waymo_infos and os.path.exists(info_pkl_path):
@@ -181,28 +195,99 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                 
                 # Check if it's a shard index file (dict with 'num_shards' key)
                 if isinstance(loaded_data, dict) and 'num_shards' in loaded_data:
-                    # Sharded format: load the appropriate shard based on rank
+                    # Sharded format: load shards based on training/validation mode
                     shard_info = loaded_data
-                    
-                    # Get rank from environment (for distributed training)
-                    # Fallback to 0 if not in distributed mode
-                    try:
-                        rank = int(os.environ.get('RANK', 0))
-                    except (ValueError, TypeError):
-                        rank = 0
-                    
-                    # Determine which shard this rank should load
                     num_shards = shard_info['num_shards']
-                    shard_idx = rank % num_shards
                     
-                    # Load the appropriate shard file
-                    shard_file = shard_info['shard_files'][shard_idx]
-                    shard_path = os.path.join(os.path.dirname(path), shard_file)
+                    # Check if shards are organized by scene (new format) or randomly shuffled (old format)
+                    sharding_method = shard_info.get('sharding_method', 'random')
                     
-                    print(f"Loading sharded latents (rank {rank}, shard {shard_idx}/{num_shards}) from {shard_path}...")
-                    with open(shard_path, 'rb') as f:
-                        cached_files = pickle.load(f)
-                    print(f"Loaded {len(cached_files)} cached samples from shard {shard_idx}")
+                    if training:
+                        if sharding_method == 'by_scene':
+                            # New format: shards are organized by scene, each shard contains complete scenes
+                            # Load one shard per rank - each shard has complete scenes, so we can find consecutive frames
+                            try:
+                                rank = int(os.environ.get('RANK', 0))
+                            except (ValueError, TypeError):
+                                rank = 0
+                            
+                            shard_idx = rank % num_shards
+                            shard_file = shard_info['shard_files'][shard_idx]
+                            shard_path = os.path.join(os.path.dirname(path), shard_file)
+                            
+                            print(f"Loading sharded latents (rank {rank}, shard {shard_idx}/{num_shards}) from {shard_path}...")
+                            print(f"  Shards are organized by scene - each shard contains complete scenes")
+                            with open(shard_path, 'rb') as f:
+                                cached_files = pickle.load(f)
+                            print(f"Loaded {len(cached_files)} cached samples from shard {shard_idx}")
+                            
+                            # Frames within each scene are already in order (processed scene by scene)
+                            # But we should sort by scene and frame to ensure proper ordering
+                            def get_sort_key(x):
+                                path = x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path']
+                                parts = path.split('/')
+                                scene_id = parts[-2] if len(parts) >= 2 else ''
+                                frame_name = os.path.basename(path).replace('_04.npz', '').replace('.npz', '')
+                                return (scene_id, frame_name)
+                            
+                            cached_files.sort(key=get_sort_key)
+                            print(f"  Sorted {len(cached_files)} samples by scene and frame")
+                        else:
+                            # Old format: shards are randomly shuffled, need to load all and sort
+                            print(f"Loading ALL training shards ({num_shards} shards) - old shuffled format detected")
+                            print(f"  Note: Consider re-saving with scene-based sharding for better performance")
+                            cached_files = []
+                            for shard_idx in range(num_shards):
+                                shard_file = shard_info['shard_files'][shard_idx]
+                                shard_path = os.path.join(os.path.dirname(path), shard_file)
+                                with open(shard_path, 'rb') as f:
+                                    shard_data = pickle.load(f)
+                                cached_files.extend(shard_data)
+                                print(f"  Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
+                            
+                            # Sort by path to restore scene order
+                            def get_sort_key(x):
+                                path = x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path']
+                                parts = path.split('/')
+                                scene_id = parts[-2] if len(parts) >= 2 else ''
+                                frame_name = os.path.basename(path).replace('_04.npz', '').replace('.npz', '')
+                                return (scene_id, frame_name)
+                            
+                            cached_files.sort(key=get_sort_key)
+                            print(f"Loaded and sorted {len(cached_files)} total training samples from all shards")
+                    else:
+                        # Validation: load ALL shards to have complete dataset for sequence validation
+                        # Note: Even though shards are organized by scene (no scene splitting),
+                        # we load all shards for validation to have the complete dataset
+                        sharding_method = shard_info.get('sharding_method', 'random')
+                        if sharding_method == 'by_scene':
+                            print(f"Loading ALL validation shards ({num_shards} shards) - shards organized by scene")
+                            print(f"  Each shard contains complete scenes (no scene splitting)")
+                        else:
+                            print(f"Loading ALL validation shards ({num_shards} shards) - old shuffled format")
+                        
+                        cached_files = []
+                        for shard_idx in range(num_shards):
+                            shard_file = shard_info['shard_files'][shard_idx]
+                            shard_path = os.path.join(os.path.dirname(path), shard_file)
+                            with open(shard_path, 'rb') as f:
+                                shard_data = pickle.load(f)
+                            cached_files.extend(shard_data)
+                            print(f"  Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
+                        
+                        # Sort by path to restore scene order
+                        # Paths are like: .../training/000/000_04.npz or .../validation/000/000_04.npz
+                        # Sorting by path will group frames by scene
+                        def get_sort_key(x):
+                            path = x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path']
+                            # Extract scene_id and frame_id for sorting: .../<split>/<scene>/<frame>.npz
+                            parts = path.split('/')
+                            scene_id = parts[-2] if len(parts) >= 2 else ''
+                            frame_name = os.path.basename(path).replace('_04.npz', '').replace('.npz', '')
+                            return (scene_id, frame_name)
+                        
+                        cached_files.sort(key=get_sort_key)
+                        print(f"Loaded and sorted {len(cached_files)} total validation samples from all shards")
                 else:
                     # Regular pickle format (list of dicts)
                     cached_files = loaded_data
@@ -299,11 +384,29 @@ class WaymoDatasetOccOnly(DatasetTemplate):
 
         # scenes_list parsed from path: .../<split>/<scene>/<frame>.npz
         scenes_list = [os.path.basename(os.path.dirname(p)) for p in self.all_samples]
+        
+        # Debug: print info about dataset
+        split_name = "Training" if training else "Validation"
+        print(f"{split_name} dataset: total_samples={len(self.all_samples)}, safe_length={self.safe_length}")
+        if len(self.all_samples) > 0:
+            print(f"  First few paths: {self.all_samples[:3]}")
+            print(f"  First few scenes: {scenes_list[:10]}")
+            # Count frames per scene
+            from collections import Counter
+            scene_counts = Counter(scenes_list)
+            print(f"  Scenes: {len(scene_counts)} unique scenes")
+            print(f"  Frames per scene: min={min(scene_counts.values())}, max={max(scene_counts.values())}, avg={sum(scene_counts.values())/len(scene_counts):.1f}")
+        
         for idx, scene in enumerate(scenes_list):
             sub_seq = scenes_list[idx: idx + self.safe_length]
             if len(set(sub_seq)) == 1 and len(sub_seq) == self.safe_length:
                 self.valid_idx.append(idx)
         self.valid_idx = self.valid_idx[::self.win_size] if training else self.valid_idx
+        
+        print(f"  Valid indices found: {len(self.valid_idx)}")
+        if len(self.valid_idx) == 0:
+            print(f"  [ERROR] No valid sequences found! Need {self.safe_length} consecutive frames in same scene.")
+            print(f"  [ERROR] This will cause train_loader to be empty and skip training!")
 
     def _construct_trajectories(self):
         """

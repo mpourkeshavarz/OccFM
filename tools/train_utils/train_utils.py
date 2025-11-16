@@ -93,12 +93,20 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
     #     wandb.watch(model.module, log="gradients", log_freq=200)
 
     with live_ctx as live:
+        if is_main_process:
+            print(f"[DEBUG] train_loader length: {len(train_loader)}")
+            if len(train_loader) == 0:
+                print(f"[ERROR] train_loader is EMPTY! This will cause training to skip immediately to evaluation!")
+        
         for epoch in range(start_epoch, optim_cfg.NUM_EPOCHS):
             # 每轮新建 step task
             if is_main_process:
                 step_task = progress.add_task(description="Samples", total=len(train_loader))
+                print(f"[DEBUG] Starting epoch {epoch}, train_loader has {len(train_loader)} batches")
 
+            batch_count = 0
             for batch_idx, batch in enumerate(train_loader):
+                batch_count += 1
                 model.train()
                 optimizer.zero_grad()
 
@@ -131,6 +139,9 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 dist.barrier()
 
             if is_main_process:
+                print(f"[DEBUG] Completed epoch {epoch}: processed {batch_count} batches")
+                if batch_count == 0:
+                    print(f"[ERROR] Epoch {epoch} had 0 batches! Training is being skipped!")
                 progress.update(epoch_task, advance=1)
                 progress.remove_task(step_task)
 
@@ -139,6 +150,12 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
             current_epoch = epoch + 1
             if val_loader is not None and current_epoch % eval_interval == 0:
+                # Check if validation loader has samples
+                if len(val_loader) == 0:
+                    if is_main_process:
+                        print(f"Warning: Validation loader is empty (len={len(val_loader)}). Skipping validation.")
+                    dist.barrier(device_ids=[rank])
+                    continue
 
                 eval_model = ema_model if ema_model is not None else model
                 teach_forcing = getattr(eval_model.module, 'teach_forcing', False)

@@ -24,8 +24,8 @@ DATA_CONFIG:
     # PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
     #               'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
     PICKLE_PATH:
-    train: './data/waymo_latent_vae/x16/waymo_latent_train_shards.pkl'
-    test: './data/waymo_latent_vae/x16/waymo_latent_val_shards.pkl'              
+        train: './data/waymo_latent_vae/x16/waymo_latent_train_shards.pkl'
+        test: './data/waymo_latent_vae/x16/waymo_latent_val_shards.pkl'              
     # OCC_PATH: 'data/nuscenes'
     ONLY_BG: False
     SEM_MODE: True
@@ -63,7 +63,7 @@ LOSS:
 OPTIMIZATION:
     NAME: ADAM
 
-    BATCH_SIZE_PER_GPU: 2
+    BATCH_SIZE_PER_GPU: 1
     NUM_EPOCHS: 200
     BASE_LR: 2.0e-05
     WARMUP_STEPS: 1000

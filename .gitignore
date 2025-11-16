@@ -4,5 +4,6 @@ thirdparty/
 
 # Ignore Python cache files
 __pycache__/
+.vscode/
 *.py[cod]
 
