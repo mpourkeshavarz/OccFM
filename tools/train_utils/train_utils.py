@@ -146,10 +146,30 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 progress.update(epoch_task, advance=1)
                 progress.remove_task(step_task)
 
-            # ----------- validation -----------
+            # ----------- Save checkpoint every epoch -----------
+            current_epoch = epoch + 1
+            dist.barrier()
+            
+            if is_main_process:
+                # Save checkpoint every epoch (not tied to validation)
+                ckpt_file = f'epoch={str(current_epoch).zfill(6)}.ckpt'
+                ckpt_path_full = ckpt_path + ckpt_file
+                try:
+                    torch.save({
+                        'state_dict': model.state_dict(),
+                        'ema_model': ema_model.state_dict() if ema_model is not None else None,
+                        'optimizer_states': [optimizer.state_dict()],
+                        'epoch': current_epoch,
+                        'scaler_state_dict': scaler.state_dict() if use_amp else None,
+                        'lr_scheduler': lr_scheduler.state_dict()
+                    }, ckpt_path_full)
+                    console.print(f"[green]💾  Saved epoch checkpoint:[/] {ckpt_file}")
+                except Exception as e:
+                    console.print(f"[red]Error saving checkpoint: {e}[/red]")
+            
             dist.barrier()
 
-            current_epoch = epoch + 1
+            # ----------- validation -----------
             if val_loader is not None and current_epoch % eval_interval == 0:
                 # Check if validation loader has samples
                 if len(val_loader) == 0:
@@ -201,7 +221,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                         should_save = current_loss in top3_losses
 
                     if should_save:
-                        ckpt_file = f'epoch={str(current_epoch).zfill(6)}.ckpt'
+                        # Save best checkpoint with different name to avoid overwriting regular epoch checkpoint
+                        ckpt_file = f'epoch={str(current_epoch).zfill(6)}_best.ckpt'
                         ckpt_path_full = ckpt_path + ckpt_file
 
                         try:
@@ -222,10 +243,10 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                                 if os.path.exists(worst[1]):
                                     os.remove(worst[1])  # 删除文件
                                 saved_ckpts.remove(worst)  # 从列表移除
-                                console.print(f"[red]🗑️  Removed ckpt:[/] {worst[1]}")
+                                console.print(f"[red]🗑️  Removed best ckpt:[/] {worst[1]}")
 
-                            console.print(f"[green]💾  Saved:[/] {ckpt_file}  ({loss_key}={current_loss:.6f})")
+                            console.print(f"[green]💾  Saved best checkpoint:[/] {ckpt_file}  ({loss_key}={current_loss:.6f})")
                         except Exception as e:
-                            console.print(f"[red]Error saving checkpoint: {e}[/red]")
+                            console.print(f"[red]Error saving best checkpoint: {e}[/red]")
                     else:
-                        console.print(f"[yellow]Validation {loss_key}={current_loss:.6f} not in top-3, ckpt not saved.[/]")
+                        console.print(f"[yellow]Validation {loss_key}={current_loss:.6f} not in top-3, best ckpt not saved.[/]")

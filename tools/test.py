@@ -105,32 +105,88 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                         # Load ground truth - use same key as dataset (voxel_label) or fallback to semantics
                         npz_label_key = getattr(val_loader.dataset, 'npz_label_key', 'voxel_label')
                         gt_occ_list = []
+                        missing_files = []
                         for x in all_seq_gtocc_path:
                             file_path = x[0] if isinstance(x, list) else x
-                            labels = np.load(file_path)[npz_label_key].copy()
-                            # Remap free label from 23 (ground truth format) to 15 (model format)
-                            free_label_id = getattr(val_loader.dataset, 'free_label_id', 15)
-                            if free_label_id == 15:
-                                labels[labels == 23] = 15
-                            gt_occ_list.append(labels)
-                        gt_occ = torch.as_tensor(np.stack(gt_occ_list)).unsqueeze(0)
+                            # Resolve relative paths - check if file exists, if not try resolving relative to data_path
+                            if not os.path.exists(file_path):
+                                # Try resolving relative to dataset's data_path
+                                dataset_cfg = getattr(val_loader.dataset, 'dataset_cfg', None)
+                                if dataset_cfg and 'data_path' in dataset_cfg:
+                                    data_path = dataset_cfg['data_path']
+                                    # Extract relative part from path (e.g., 'validation/000/010_04.npz')
+                                    if 'validation' in file_path or 'training' in file_path:
+                                        parts = file_path.split(os.sep)
+                                        try:
+                                            split_idx = next(i for i, p in enumerate(parts) if p in ['validation', 'training'])
+                                            relative_path = os.sep.join(parts[split_idx:])
+                                            resolved_path = os.path.join(data_path, relative_path)
+                                            if os.path.exists(resolved_path):
+                                                file_path = resolved_path
+                                        except (StopIteration, ValueError):
+                                            pass
+                            
+                            # If file still doesn't exist, skip IoU evaluation for this batch
+                            if not os.path.exists(file_path):
+                                missing_files.append(file_path)
+                                continue
+                            
+                            try:
+                                labels = np.load(file_path)[npz_label_key].copy()
+                                # Remap free label from 23 (ground truth format) to 15 (model format)
+                                free_label_id = getattr(val_loader.dataset, 'free_label_id', 15)
+                                if free_label_id == 15:
+                                    labels[labels == 23] = 15
+                                gt_occ_list.append(labels)
+                            except Exception as e:
+                                if is_main_process and batch_idx == 0:
+                                    print(f"[WARNING] Failed to load {file_path}: {e}. Skipping IoU evaluation for this batch.")
+                                missing_files.append(file_path)
+                                continue
+                        
+                        # If we couldn't load any ground truth files, skip IoU evaluation
+                        if len(gt_occ_list) == 0:
+                            if is_main_process and batch_idx == 0:
+                                print(f"[WARNING] Could not load ground truth files for IoU evaluation.")
+                                print(f"[WARNING] Missing files: {missing_files[:3]}..." if len(missing_files) > 3 else f"[WARNING] Missing files: {missing_files}")
+                                print(f"[WARNING] Skipping IoU evaluation. This is expected when using cached latents without original .npz files.")
+                        else:
+                            # If we loaded some but not all, warn but continue with what we have
+                            if len(gt_occ_list) < len(all_seq_gtocc_path):
+                                if is_main_process and batch_idx == 0:
+                                    print(f"[WARNING] Loaded {len(gt_occ_list)}/{len(all_seq_gtocc_path)} ground truth files. Some files missing.")
+                            
+                            gt_occ = torch.as_tensor(np.stack(gt_occ_list)).unsqueeze(0)
+                            pred_occ = torch.concat(pred_occs_near, dim=1)
+
+                            if val_loader.dataset.sem_mode:
+                                mIoU_counter._after_step(pred_occ, gt_occ)
+
+                                # assume empty is the last label
+                                # Use free_label_id if available, otherwise len(label_name) - 1
+                                free_label_id = getattr(val_loader.dataset, 'free_label_id', len(label_name) - 1)
+                                pred_occ[pred_occ != free_label_id] = 1
+                                pred_occ[pred_occ == free_label_id] = 0
+                                gt_occ[gt_occ != free_label_id] = 1
+                                gt_occ[gt_occ == free_label_id] = 0
+
+                            IoU_counter._after_step(pred_occ, gt_occ)
                     else:
                         gt_occ = val_disp_dict['gt_occ'].detach().cpu()
+                        pred_occ = torch.concat(pred_occs_near, dim=1)
 
-                    pred_occ = torch.concat(pred_occs_near, dim=1)
+                        if val_loader.dataset.sem_mode:
+                            mIoU_counter._after_step(pred_occ, gt_occ)
 
-                    if val_loader.dataset.sem_mode:
-                        mIoU_counter._after_step(pred_occ, gt_occ)
+                            # assume empty is the last label
+                            # Use free_label_id if available, otherwise len(label_name) - 1
+                            free_label_id = getattr(val_loader.dataset, 'free_label_id', len(label_name) - 1)
+                            pred_occ[pred_occ != free_label_id] = 1
+                            pred_occ[pred_occ == free_label_id] = 0
+                            gt_occ[gt_occ != free_label_id] = 1
+                            gt_occ[gt_occ == free_label_id] = 0
 
-                        # assume empty is the last label
-                        # Use free_label_id if available, otherwise len(label_name) - 1
-                        free_label_id = getattr(val_loader.dataset, 'free_label_id', len(label_name) - 1)
-                        pred_occ[pred_occ != free_label_id] = 1
-                        pred_occ[pred_occ == free_label_id] = 0
-                        gt_occ[gt_occ != free_label_id] = 1
-                        gt_occ[gt_occ == free_label_id] = 0
-
-                    IoU_counter._after_step(pred_occ, gt_occ)
+                        IoU_counter._after_step(pred_occ, gt_occ)
                     #all_miou, cate_miou = mIoU_counter._after_epoch()
                     #all_iou, cate_iou = IoU_counter._after_epoch()
                     #print()

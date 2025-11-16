@@ -1,16 +1,16 @@
 NAME: OccFM
 
 GEN_TRAINING: True # Skip the VAE structure
-EVAL_INTERVAL: 1
+EVAL_INTERVAL: 100
 LOSS_MONITOR: 'mse_loss'
 
-# Training (non-autoregressive)
-# No AUTO_REG setting → defaults to False
-# Predicts all 80 frames in one forward pass
-# Inference (non-autoregressive)
-# ROLL_OUT_STEP: 80 and ROLL_OUT_LENGTH: 80
-# iter_num = ROLL_OUT_LENGTH // ROLL_OUT_STEP = 80 // 80 = 1
-# Only 1 iteration, predicting all 80 frames at once
+# Training (autoregressive with teacher forcing)
+AUTO_REG: True  # Enable autoregressive training (predicts one frame at a time)
+TEACH_FORCE: True  # Enable teacher forcing (uses ground truth during training)
+# Inference (autoregressive)
+# ROLL_OUT_STEP: 1 and ROLL_OUT_LENGTH: 80
+# iter_num = ROLL_OUT_LENGTH // ROLL_OUT_STEP = 80 // 1 = 80
+# 80 iterations, predicting one frame at a time autoregressively
 
 
 
@@ -35,7 +35,7 @@ DATA_CONFIG:
 
     IOU_EVAL_LENGTH: 80 # total length to eval miou
     ROLL_OUT_LENGTH: 80 # total length of eval
-    ROLL_OUT_STEP: 80
+    ROLL_OUT_STEP: 1  # For autoregressive: predict one frame at a time (was 80 for non-autoregressive)
 
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
