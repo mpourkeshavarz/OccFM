@@ -108,3 +108,68 @@ def show_eval(avg_dict, console, output_dir=None):
         table.add_row(str(idx), f"{all_miou[idx]:.4f}", f"{all_iou[idx]:.4f}")
 
     console.print(table)
+
+
+def save_eval_results_by_epoch(avg_dict, output_dir, epoch):
+    """
+    Save evaluation results (IoU, mIoU) to a text file named by epoch number.
+    
+    Args:
+        avg_dict: Dictionary containing evaluation metrics
+        output_dir: Directory to save the results
+        epoch: Epoch number (1-indexed)
+    """
+    if 'all_miou' not in avg_dict or 'all_iou' not in avg_dict:
+        return
+    
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    all_miou = avg_dict['all_miou']
+    all_iou = avg_dict['all_iou']
+    mean_miou = np.mean(all_miou)
+    mean_iou = np.mean(all_iou)
+    
+    txt_file = output_path / f'eval_epoch_{str(epoch).zfill(6)}.txt'
+    
+    with open(txt_file, 'w') as f:
+        f.write(f"Evaluation Results - Epoch {epoch}\n")
+        f.write("=" * 60 + "\n\n")
+        
+        # Summary metrics
+        f.write("Summary Metrics:\n")
+        f.write("-" * 60 + "\n")
+        f.write(f"Mean mIoU: {mean_miou:.6f}\n")
+        f.write(f"Mean IoU: {mean_iou:.6f}\n")
+        
+        if 'time' in avg_dict:
+            f.write(f"Avg latency: {avg_dict['time']:.6f}\n")
+        
+        # Loss metrics if available
+        for key, value in avg_dict.items():
+            if 'loss' in key.lower():
+                f.write(f"{key}: {value:.6f}\n")
+        
+        f.write("\n" + "=" * 60 + "\n\n")
+        
+        # Per-frame IoU and mIoU
+        f.write("Per-frame Results:\n")
+        f.write("-" * 60 + "\n")
+        f.write(f"{'Frame Index':<15} {'mIoU':<15} {'IoU':<15}\n")
+        f.write("-" * 60 + "\n")
+        
+        num_frames = min(len(all_miou), len(all_iou))
+        for idx in range(num_frames):
+            f.write(f"{idx:<15} {all_miou[idx]:<15.6f} {all_iou[idx]:<15.6f}\n")
+        
+        # Category mIoU if available
+        if 'cate_miou' in avg_dict and isinstance(avg_dict['cate_miou'], dict):
+            f.write("\n" + "=" * 60 + "\n\n")
+            f.write("Category-wise mIoU:\n")
+            f.write("-" * 60 + "\n")
+            for key, value in avg_dict['cate_miou'].items():
+                f.write(f"{key}: {value:.6f}\n")
+        
+        f.write("\n" + "=" * 60 + "\n")
+    
+    return txt_file

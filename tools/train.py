@@ -152,7 +152,7 @@ if __name__ == '__main__':
                         is_main_process=is_main_process, ckpt_path=output_dir + '/ckpt/', start_epoch=model_status['epoch'],
                         optim_cfg=cfg.OPTIMIZATION, rank=rank, ema_model=ema_model, eval_interval=cfg.EVAL_INTERVAL,
                         model_func=model_fn_decorator(rank), loss_monitor=cfg.LOSS_MONITOR, use_amp=args.amp,
-                        wandb_logger=wandb_logger)
+                        wandb_logger=wandb_logger, output_dir=output_dir)
         else:
             if is_main_process:
                 console.print(
@@ -168,7 +168,7 @@ if __name__ == '__main__':
         train_model(model, optimizer, train_loader, val_loader, scheduler, console=console, progress=progress, rank=rank,
                     use_amp = args.amp, ckpt_path=output_dir + '/ckpt/', start_epoch=0, optim_cfg=cfg.OPTIMIZATION,
                     is_main_process=is_main_process, eval_interval=cfg.EVAL_INTERVAL, model_func=model_fn_decorator(rank),
-                    loss_monitor=cfg.LOSS_MONITOR, ema_model=ema_model, wandb_logger=wandb_logger)
+                    loss_monitor=cfg.LOSS_MONITOR, ema_model=ema_model, wandb_logger=wandb_logger, output_dir=output_dir)
 
     model = ema_model if ema_model is not None else model
 
@@ -204,5 +204,5 @@ if __name__ == '__main__':
                         console=console, cache_mode=args.cache_mode, mu_sigma_cache=cache_mu_sigma, save_path=args.save_path,
                         is_main_process=is_main_process)
 
-    dist.barrier(device_ids=[rank])
+    dist.barrier()
     dist.destroy_process_group()

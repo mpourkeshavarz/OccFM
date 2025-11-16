@@ -4,7 +4,7 @@ from rich.live import Live
 from tools.test import val_model
 from rich.console import Group
 from contextlib import nullcontext
-from tools.common_utils.display_utils import format_disp_dict
+from tools.common_utils.display_utils import format_disp_dict, save_eval_results_by_epoch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tools.common_utils.logging import wandb_log_train_step, wandb_log_val_step
 
@@ -73,7 +73,7 @@ def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimize
 def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_epoch, optim_cfg,
                 model_func, ckpt_path, console, progress, ema_model=None, wandb_logger=None,
                 eval_interval=1, use_amp=True, loss_monitor=None, is_main_process=None, rank=None,
-                ckpt_save_interval_batches=None):
+                ckpt_save_interval_batches=None, output_dir=None):
     # DDP after load parameters
     # encoder/decoder param also include but no grad
     model_update_func = auto_regressive_training if getattr(model, 'auto_regressive', False) else single_loop_training
@@ -123,6 +123,8 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                     
                     # Save checkpoint after N batches if configured
                     if ckpt_save_interval_batches is not None and (batch_idx + 1) % ckpt_save_interval_batches == 0:
+                        # Synchronize before saving checkpoint to ensure all ranks are ready
+                        dist.barrier()
                         current_epoch = epoch + 1
                         ckpt_file = f'epoch={str(current_epoch).zfill(6)}_batch={str(batch_idx + 1).zfill(6)}.ckpt'
                         ckpt_path_full = ckpt_path + ckpt_file
@@ -135,8 +137,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                             'lr_scheduler': lr_scheduler.state_dict()
                         }, ckpt_path_full)
                         console.print(f"[green]💾  Saved batch checkpoint:[/] {ckpt_file}")
-
-                dist.barrier()
+                        dist.barrier()
 
             if is_main_process:
                 print(f"[DEBUG] Completed epoch {epoch}: processed {batch_count} batches")
@@ -146,7 +147,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 progress.remove_task(step_task)
 
             # ----------- validation -----------
-            dist.barrier(device_ids=[rank])
+            dist.barrier()
 
             current_epoch = epoch + 1
             if val_loader is not None and current_epoch % eval_interval == 0:
@@ -154,43 +155,77 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
                 if len(val_loader) == 0:
                     if is_main_process:
                         print(f"Warning: Validation loader is empty (len={len(val_loader)}). Skipping validation.")
-                    dist.barrier(device_ids=[rank])
+                    dist.barrier()
                     continue
 
                 eval_model = ema_model if ema_model is not None else model
                 teach_forcing = getattr(eval_model.module, 'teach_forcing', False)
+                
+                # Determine if this is a CFM model (has transition_model)
+                test_cfm = hasattr(eval_model.module, 'transition_model')
 
                 val_avg_loss = val_model(eval_model, val_loader, model_func, progress, live, teach_forcing=teach_forcing,
-                                         use_amp=use_amp, rank=rank, is_main_process=is_main_process)
+                                         use_amp=use_amp, rank=rank, is_main_process=is_main_process,
+                                         eval_iou=True, test_cfm=test_cfm)
 
                 if is_main_process:
+                    # Save IoU evaluation results to file
+                    if output_dir is not None and 'all_miou' in val_avg_loss:
+                        eval_file = save_eval_results_by_epoch(val_avg_loss, output_dir, current_epoch)
+                        console.print(f"[green]📊 Evaluation results saved to: {eval_file}[/green]")
+                    
                     wandb_log_val_step(model.module.global_step, epoch, val_avg_loss) if wandb_logger is not None else None
-                    current_loss = val_avg_loss[loss_monitor if loss_monitor is not None else 'loss']
+                    
+                    # Get loss value - assert error if expected loss key is missing
+                    loss_key = loss_monitor if loss_monitor is not None else 'loss'
+                    if loss_key not in val_avg_loss:
+                        available_keys = list(val_avg_loss.keys())
+                        error_msg = (f"Expected loss key '{loss_key}' not found in validation results. "
+                                    f"Available keys: {available_keys}")
+                        console.print(f"[red]Error: {error_msg}[/red]")
+                        dist.barrier()
+                        raise KeyError(error_msg)
+                    
+                    current_loss = val_avg_loss[loss_key]
                     historical_losses.append([current_epoch, current_loss])
 
-                    if current_loss in sorted([x[1] for x in historical_losses])[:3]:
+                    # Always save first checkpoint, then check top-3 for subsequent ones
+                    should_save = False
+                    if len(historical_losses) <= 3:
+                        # Always save first 3 checkpoints
+                        should_save = True
+                    else:
+                        # Check if current loss is in top-3
+                        sorted_losses = sorted([x[1] for x in historical_losses])
+                        top3_losses = sorted_losses[:3]
+                        should_save = current_loss in top3_losses
+
+                    if should_save:
                         ckpt_file = f'epoch={str(current_epoch).zfill(6)}.ckpt'
                         ckpt_path_full = ckpt_path + ckpt_file
 
-                        torch.save({
-                            'state_dict': model.state_dict(),
-                            'ema_model': ema_model.state_dict() if ema_model is not None else None,
-                            'optimizer_states': [optimizer.state_dict()],
-                            'epoch': current_epoch,
-                            'scaler_state_dict': scaler.state_dict() if use_amp else None,
-                            'lr_scheduler': lr_scheduler.state_dict()
-                        }, ckpt_path_full)
+                        try:
+                            torch.save({
+                                'state_dict': model.state_dict(),
+                                'ema_model': ema_model.state_dict() if ema_model is not None else None,
+                                'optimizer_states': [optimizer.state_dict()],
+                                'epoch': current_epoch,
+                                'scaler_state_dict': scaler.state_dict() if use_amp else None,
+                                'lr_scheduler': lr_scheduler.state_dict()
+                            }, ckpt_path_full)
 
-                        saved_ckpts.append((current_loss, ckpt_path_full))  # 记录新模型
+                            saved_ckpts.append((current_loss, ckpt_path_full))  # 记录新模型
 
-                        # 保留 top-3：如果多于 3 个，删掉最差的那个
-                        if len(saved_ckpts) > 3:
-                            worst = max(saved_ckpts, key=lambda p: p[0])  # 按 loss 最大找最差
-                            os.remove(worst[1])  # 删除文件
-                            saved_ckpts.remove(worst)  # 从列表移除
-                            console.print(f"[red]🗑️  Removed ckpt:[/] {worst[1]}")
+                            # 保留 top-3：如果多于 3 个，删掉最差的那个
+                            if len(saved_ckpts) > 3:
+                                worst = max(saved_ckpts, key=lambda p: p[0])  # 按 loss 最大找最差
+                                if os.path.exists(worst[1]):
+                                    os.remove(worst[1])  # 删除文件
+                                saved_ckpts.remove(worst)  # 从列表移除
+                                console.print(f"[red]🗑️  Removed ckpt:[/] {worst[1]}")
 
-                        console.print(f"[green]💾  Saved:[/] {ckpt_file}  (loss {current_loss:.4f})")
-
+                            console.print(f"[green]💾  Saved:[/] {ckpt_file}  ({loss_key}={current_loss:.6f})")
+                        except Exception as e:
+                            console.print(f"[red]Error saving checkpoint: {e}[/red]")
                     else:
-                        console.print(f"[yellow]Validation loss {current_loss:.4f} not in top-3, ckpt not saved.[/]")
+                        console.print(f"[yellow]Validation {loss_key}={current_loss:.6f} not in top-3, ckpt not saved.[/]")

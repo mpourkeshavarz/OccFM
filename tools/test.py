@@ -135,7 +135,7 @@ def val_model(model, val_loader, model_func, progress, console_live, use_amp=Fal
                     #all_iou, cate_iou = IoU_counter._after_epoch()
                     #print()
 
-            dist.barrier(device_ids=[rank])
+            dist.barrier()
 
             if len(pred_occs_all) > 0 and fid_eval_path is not None:
                 pred_occs_all = torch.concat(pred_occs_all, dim=1).squeeze(0).numpy().astype(np.uint8)
