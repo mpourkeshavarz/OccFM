@@ -77,7 +77,7 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
     # DDP after load parameters
     # encoder/decoder param also include but no grad
     model_update_func = auto_regressive_training if getattr(model, 'auto_regressive', False) else single_loop_training
-    model = DDP(model, device_ids=[rank])
+    model = DDP(model, device_ids=[rank], find_unused_parameters=True)
 
     train_loader.sampler.set_epoch(start_epoch)
     scaler = torch.amp.GradScaler(enabled=use_amp, init_scale=optim_cfg.get('LOSS_SCALE_FP16', 10))

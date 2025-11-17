@@ -175,7 +175,7 @@ if __name__ == '__main__':
     # cache and fps
     with Live(console=console, refresh_per_second=2, transient=True) as live:
 
-        model = DDP(model, device_ids=[local_rank]) if recover_training else model
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True) if recover_training else model
         test_cfm = hasattr(model.module, 'transition_model') if not args.use_ema else hasattr(model.module.module, 'transition_model')
 
         if val_loader.dataset.gen_training:

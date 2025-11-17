@@ -240,8 +240,25 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                             for shard_idx in range(num_shards):
                                 shard_file = shard_info['shard_files'][shard_idx]
                                 shard_path = os.path.join(os.path.dirname(path), shard_file)
-                                with open(shard_path, 'rb') as f:
-                                    shard_data = pickle.load(f)
+                                
+                                # Verify file exists and get size
+                                if not os.path.exists(shard_path):
+                                    raise FileNotFoundError(f"Training shard file not found: {shard_path}")
+                                
+                                file_size = os.path.getsize(shard_path)
+                                
+                                try:
+                                    with open(shard_path, 'rb') as f:
+                                        shard_data = pickle.load(f)
+                                except (pickle.UnpicklingError, EOFError) as e:
+                                    raise RuntimeError(
+                                        f"Failed to load training shard {shard_idx+1}/{num_shards} from {shard_path}\n"
+                                        f"  File size: {file_size} bytes ({file_size / (1024**3):.2f} GB)\n"
+                                        f"  Error: {type(e).__name__}: {str(e)}\n"
+                                        f"  This usually means the pickle file is corrupted or incomplete.\n"
+                                        f"  Please re-run the save_waymo_latents.py script to regenerate the training shards."
+                                    ) from e
+                                
                                 cached_files.extend(shard_data)
                                 print(f"  Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
                             
@@ -270,10 +287,28 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                         for shard_idx in range(num_shards):
                             shard_file = shard_info['shard_files'][shard_idx]
                             shard_path = os.path.join(os.path.dirname(path), shard_file)
-                            with open(shard_path, 'rb') as f:
-                                shard_data = pickle.load(f)
+                            
+                            # Verify file exists and get size
+                            if not os.path.exists(shard_path):
+                                raise FileNotFoundError(f"Validation shard file not found: {shard_path}")
+                            
+                            file_size = os.path.getsize(shard_path)
+                            print(f"  Loading shard {shard_idx+1}/{num_shards}: {shard_file} ({file_size / (1024**3):.2f} GB)")
+                            
+                            try:
+                                with open(shard_path, 'rb') as f:
+                                    shard_data = pickle.load(f)
+                            except (pickle.UnpicklingError, EOFError) as e:
+                                raise RuntimeError(
+                                    f"Failed to load validation shard {shard_idx+1}/{num_shards} from {shard_path}\n"
+                                    f"  File size: {file_size} bytes ({file_size / (1024**3):.2f} GB)\n"
+                                    f"  Error: {type(e).__name__}: {str(e)}\n"
+                                    f"  This usually means the pickle file is corrupted or incomplete.\n"
+                                    f"  Please re-run the save_waymo_latents.py script to regenerate the validation shards."
+                                ) from e
+                            
                             cached_files.extend(shard_data)
-                            print(f"  Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
+                            print(f"  ✓ Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
                         
                         # Sort by path to restore scene order
                         # Paths are like: .../training/000/000_04.npz or .../validation/000/000_04.npz
