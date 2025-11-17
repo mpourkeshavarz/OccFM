@@ -18,8 +18,8 @@ DATA_CONFIG:
     # PICKLE_PATH: {'train': './data/waymo_latent_vae/x16/waymo_latent_train.pkl',
     #               'test': './data/waymo_latent_vae/x16/waymo_latent_val.pkl'}
     PICKLE_PATH:
-        train: './data/waymo_latent_vae/x16/waymo_latent_train_shards.pkl'
-        test: './data/waymo_latent_vae/x16/waymo_latent_val_shards.pkl'              
+        train: './data/waymo_latent_vae_4shards/x16/waymo_latent_train_shards.pkl'
+        test: './data/waymo_latent_vae_4shards/x16/waymo_latent_val_shards.pkl'              
     # OCC_PATH: 'data/nuscenes'
     ONLY_BG: False
     SEM_MODE: True
