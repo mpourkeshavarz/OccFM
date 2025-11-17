@@ -4,16 +4,10 @@ GEN_TRAINING: True # Skip the VAE structure
 EVAL_INTERVAL: 1
 LOSS_MONITOR: 'mse_loss'
 
-# Training (autoregressive with teacher forcing)
-# AUTO_REG: True  # Enable autoregressive training (predicts one frame at a time)
-# TEACH_FORCE: True  # Enable teacher forcing (uses ground truth during training)
-# Inference (autoregressive)
-# ROLL_OUT_STEP: 1 and ROLL_OUT_LENGTH: 80
-# iter_num = ROLL_OUT_LENGTH // ROLL_OUT_STEP = 80 // 1 = 80
-# 80 iterations, predicting one frame at a time autoregressively
-
-
-
+# Autoregressive mode: both training and validation
+AUTO_REG: True  # Enable autoregressive training (predicts one frame at a time)
+TEACH_FORCE: True  # Enable teacher forcing (uses ground truth during training)
+WITH_CFG: True  # Use classifier-free guidance during evaluation
 
 DATA_CONFIG:
     # _BASE_CONFIG_: tools/cfgs/dataset_configs/nuscenes_dataset.yaml
@@ -35,7 +29,9 @@ DATA_CONFIG:
 
     IOU_EVAL_LENGTH: 80 # total length to eval miou
     ROLL_OUT_LENGTH: 80 # total length of eval
-    ROLL_OUT_STEP: 80  # For non-autoregressive: predict all frames at once (matches FORECAST_LENGTH)
+    ROLL_OUT_STEP: 1  # For autoregressive: predict one frame at a time
+    # iter_num = ROLL_OUT_LENGTH // ROLL_OUT_STEP = 80 // 1 = 80
+    # 80 iterations, predicting one frame at a time autoregressively
 
 COMPRESSOR_CONFIG:
     _BASE_CONFIG_: tools/cfgs/compressor_configs/vae_swin_x16_h16.yaml
@@ -46,8 +42,8 @@ COMPRESSOR_CONFIG:
 TRANSITION_MODEL_CONFIG:
     _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
     TRANSITION_MODEL:
-      TRAJECTORY_LENGTH: 90 # For non-autoregressive: should match SEQ_LENGTH (HIST_LENGTH + FORECAST_LENGTH = 10 + 80)
-      SEQ_LENGTH: 90 # For non-autoregressive: HIST_LENGTH + FORECAST_LENGTH = 10 + 80
+      TRAJECTORY_LENGTH: 11 # For autoregressive: should be HIST_LENGTH + 1 = 10 + 1
+      SEQ_LENGTH: 11 # For autoregressive: should match TRAJECTORY_LENGTH (predicts one frame at a time)
 
 PLANNER_CONFIG:
     NAME: EmptyPlanner
@@ -70,3 +66,6 @@ OPTIMIZATION:
     MIN_LR_RATIO: 0.
     GRAD_NORM_CLIP: 5
     CKPT_SAVE_INTERVAL_BATCHES: 100  # Optional: save checkpoint every N batches (in addition to epoch-based checkpoints)
+
+
+
