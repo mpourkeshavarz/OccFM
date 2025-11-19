@@ -273,56 +273,80 @@ class WaymoDatasetOccOnly(DatasetTemplate):
                             cached_files.sort(key=get_sort_key)
                             print(f"Loaded and sorted {len(cached_files)} total training samples from all shards")
                     else:
-                        # Validation: load ALL shards to have complete dataset for sequence validation
-                        # Note: Even though shards are organized by scene (no scene splitting),
-                        # we load all shards for validation to have the complete dataset
+                        # Validation: load one shard per rank (same as training)
+                        # Each shard contains complete scenes, so we can find consecutive frames
+                        # DistributedSampler will split the shard across ranks, and metrics are aggregated via all_reduce
                         sharding_method = shard_info.get('sharding_method', 'random')
-                        if sharding_method == 'by_scene':
-                            print(f"Loading ALL validation shards ({num_shards} shards) - shards organized by scene")
-                            print(f"  Each shard contains complete scenes (no scene splitting)")
-                        else:
-                            print(f"Loading ALL validation shards ({num_shards} shards) - old shuffled format")
                         
-                        cached_files = []
-                        for shard_idx in range(num_shards):
+                        if sharding_method == 'by_scene':
+                            # New format: shards are organized by scene, each shard contains complete scenes
+                            # Load one shard per rank - each shard has complete scenes, so we can find consecutive frames
+                            try:
+                                rank = int(os.environ.get('RANK', 0))
+                            except (ValueError, TypeError):
+                                rank = 0
+                            
+                            shard_idx = rank % num_shards
                             shard_file = shard_info['shard_files'][shard_idx]
                             shard_path = os.path.join(os.path.dirname(path), shard_file)
                             
-                            # Verify file exists and get size
-                            if not os.path.exists(shard_path):
-                                raise FileNotFoundError(f"Validation shard file not found: {shard_path}")
+                            print(f"Loading validation sharded latents (rank {rank}, shard {shard_idx}/{num_shards}) from {shard_path}...")
+                            print(f"  Shards are organized by scene - each shard contains complete scenes")
+                            with open(shard_path, 'rb') as f:
+                                cached_files = pickle.load(f)
+                            print(f"Loaded {len(cached_files)} cached validation samples from shard {shard_idx}")
                             
-                            file_size = os.path.getsize(shard_path)
-                            print(f"  Loading shard {shard_idx+1}/{num_shards}: {shard_file} ({file_size / (1024**3):.2f} GB)")
+                            # Frames within each scene are already in order (processed scene by scene)
+                            # But we should sort by scene and frame to ensure proper ordering
+                            def get_sort_key(x):
+                                path = x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path']
+                                parts = path.split('/')
+                                scene_id = parts[-2] if len(parts) >= 2 else ''
+                                frame_name = os.path.basename(path).replace('_04.npz', '').replace('.npz', '')
+                                return (scene_id, frame_name)
                             
-                            try:
-                                with open(shard_path, 'rb') as f:
-                                    shard_data = pickle.load(f)
-                            except (pickle.UnpicklingError, EOFError) as e:
-                                raise RuntimeError(
-                                    f"Failed to load validation shard {shard_idx+1}/{num_shards} from {shard_path}\n"
-                                    f"  File size: {file_size} bytes ({file_size / (1024**3):.2f} GB)\n"
-                                    f"  Error: {type(e).__name__}: {str(e)}\n"
-                                    f"  This usually means the pickle file is corrupted or incomplete.\n"
-                                    f"  Please re-run the save_waymo_latents.py script to regenerate the validation shards."
-                                ) from e
+                            cached_files.sort(key=get_sort_key)
+                            print(f"  Sorted {len(cached_files)} validation samples by scene and frame")
+                        else:
+                            # Old format: shards are randomly shuffled, need to load all and sort
+                            print(f"Loading ALL validation shards ({num_shards} shards) - old shuffled format detected")
+                            print(f"  Note: Consider re-saving with scene-based sharding for better performance")
+                            cached_files = []
+                            for shard_idx in range(num_shards):
+                                shard_file = shard_info['shard_files'][shard_idx]
+                                shard_path = os.path.join(os.path.dirname(path), shard_file)
+                                
+                                # Verify file exists and get size
+                                if not os.path.exists(shard_path):
+                                    raise FileNotFoundError(f"Validation shard file not found: {shard_path}")
+                                
+                                file_size = os.path.getsize(shard_path)
+                                
+                                try:
+                                    with open(shard_path, 'rb') as f:
+                                        shard_data = pickle.load(f)
+                                except (pickle.UnpicklingError, EOFError) as e:
+                                    raise RuntimeError(
+                                        f"Failed to load validation shard {shard_idx+1}/{num_shards} from {shard_path}\n"
+                                        f"  File size: {file_size} bytes ({file_size / (1024**3):.2f} GB)\n"
+                                        f"  Error: {type(e).__name__}: {str(e)}\n"
+                                        f"  This usually means the pickle file is corrupted or incomplete.\n"
+                                        f"  Please re-run the save_waymo_latents.py script to regenerate the validation shards."
+                                    ) from e
+                                
+                                cached_files.extend(shard_data)
+                                print(f"  Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
                             
-                            cached_files.extend(shard_data)
-                            print(f"  ✓ Loaded shard {shard_idx+1}/{num_shards}: {len(shard_data)} samples (total: {len(cached_files)})")
-                        
-                        # Sort by path to restore scene order
-                        # Paths are like: .../training/000/000_04.npz or .../validation/000/000_04.npz
-                        # Sorting by path will group frames by scene
-                        def get_sort_key(x):
-                            path = x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path']
-                            # Extract scene_id and frame_id for sorting: .../<split>/<scene>/<frame>.npz
-                            parts = path.split('/')
-                            scene_id = parts[-2] if len(parts) >= 2 else ''
-                            frame_name = os.path.basename(path).replace('_04.npz', '').replace('.npz', '')
-                            return (scene_id, frame_name)
-                        
-                        cached_files.sort(key=get_sort_key)
-                        print(f"Loaded and sorted {len(cached_files)} total validation samples from all shards")
+                            # Sort by path to restore scene order
+                            def get_sort_key(x):
+                                path = x['gt_path'][0] if isinstance(x['gt_path'], list) else x['gt_path']
+                                parts = path.split('/')
+                                scene_id = parts[-2] if len(parts) >= 2 else ''
+                                frame_name = os.path.basename(path).replace('_04.npz', '').replace('.npz', '')
+                                return (scene_id, frame_name)
+                            
+                            cached_files.sort(key=get_sort_key)
+                            print(f"Loaded and sorted {len(cached_files)} total validation samples from all shards")
                 else:
                     # Regular pickle format (list of dicts)
                     cached_files = loaded_data
