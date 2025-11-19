@@ -184,7 +184,7 @@ if __name__ == '__main__':
             teach_forcing = False
 
         train_loader = reset_batch_size(train_loader, 1, rank=local_rank, world_size=world_size, training=True)
-        val_loader = reset_batch_size(val_loader, 1, rank=local_rank, world_size=world_size)
+        val_loader = reset_batch_size(val_loader, batch_size, rank=local_rank, world_size=world_size)
 
         val_avg_loss = val_model(model, val_loader, model_fn_decorator(local_rank), progress, live, rank=local_rank,
                                  test_cfm=test_cfm, use_amp=args.amp, eval_iou=True, eval_fps=True,
