@@ -1,7 +1,7 @@
 NAME: OccFM
 
 GEN_TRAINING: True # Skip the VAE structure
-EVAL_INTERVAL: 1
+EVAL_INTERVAL: 20
 LOSS_MONITOR: 'mse_loss'
 
 # Autoregressive mode: both training and validation
