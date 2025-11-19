@@ -33,29 +33,22 @@ def single_loop_training(model, model_func, batch, use_amp, scaler, optimizer, l
     return tb_dict
 
 def auto_regressive_training(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler, max_grad,
-                             cond_length, ema_model=None):
+                             cond_length, roll_out_step=1, ema_model=None):
 
     forecast_length = batch['x_sampled'].shape[1] - cond_length
 
-    run_time_forecasted = []
-    for forecast_idx in range(forecast_length):
-        temp_data_dict = {'paths': [x[forecast_idx:forecast_idx+cond_length + 1] for x in batch['paths']],
-                          'trajectory': batch['trajectory'][:, forecast_idx:forecast_idx+cond_length + 1],
-                          'x_sampled': batch['x_sampled'][:, forecast_idx:forecast_idx+cond_length + 1],
+    # Process roll_out_step frames at a time instead of 1 frame at a time
+    # With teacher forcing, we use ground truth, so we don't need to replace predictions
+    for forecast_idx in range(0, forecast_length, roll_out_step):
+        # Process cond_length + roll_out_step frames (e.g., 10 + 10 = 20 frames)
+        end_idx = forecast_idx + cond_length + roll_out_step
+        temp_data_dict = {'paths': [x[forecast_idx:end_idx] for x in batch['paths']],
+                          'trajectory': batch['trajectory'][:, forecast_idx:end_idx],
+                          'x_sampled': batch['x_sampled'][:, forecast_idx:end_idx],
                           'cond_length': cond_length}
-
-        if len(run_time_forecasted) > 0:
-            if len(run_time_forecasted) < cond_length:
-                temp_data_dict['x_sampled'][:, -1-len(run_time_forecasted):-1] = np.concatenate(run_time_forecasted, axis=1)
-            else:
-                temp_data_dict['x_sampled'][:, -1-cond_length:-1] = np.concatenate(run_time_forecasted[-cond_length:], axis=1)
 
         with torch.amp.autocast('cuda', enabled=use_amp):
             loss, tb_dict, disp_dict = model_func(model, temp_data_dict)
-
-        if disp_dict.get('mean_velo_predict', None) is not None:
-            run_time_pred = disp_dict['mean_velo_predict'].detach().cpu().numpy()
-            run_time_forecasted.append(run_time_pred)
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -112,7 +105,9 @@ def train_model(model, optimizer, train_loader, val_loader, lr_scheduler, start_
 
                 tb_dict = model_update_func(model, model_func, batch, use_amp, scaler, optimizer, lr_scheduler,
                                             optim_cfg.GRAD_NORM_CLIP,
-                                            cond_length=getattr(train_loader.dataset, 'hist_length', 0), ema_model=ema_model)
+                                            cond_length=getattr(train_loader.dataset, 'hist_length', 0),
+                                            roll_out_step=getattr(train_loader.dataset, 'roll_out_step', 1),
+                                            ema_model=ema_model)
 
                 if is_main_process:
                     progress.update(step_task, advance=1)
