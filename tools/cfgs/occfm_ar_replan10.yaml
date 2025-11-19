@@ -42,8 +42,8 @@ COMPRESSOR_CONFIG:
 TRANSITION_MODEL_CONFIG:
     _BASE_CONFIG_: tools/cfgs/transition_configs/cfm.yaml
     TRANSITION_MODEL:
-      TRAJECTORY_LENGTH: 20 # For autoregressive: should be HIST_LENGTH + ROLL_OUT_STEP = 10 + 10
-      SEQ_LENGTH: 20 # For autoregressive: should match TRAJECTORY_LENGTH (predicts 10 frames at a time)
+      TRAJECTORY_LENGTH: 11 # For autoregressive: should be HIST_LENGTH + 1 = 10 + 1 (trajectory conditioning)
+      SEQ_LENGTH: 20 # For autoregressive: should be HIST_LENGTH + ROLL_OUT_STEP = 10 + 10 (to handle 10-frame prediction)
 
 PLANNER_CONFIG:
     NAME: EmptyPlanner
